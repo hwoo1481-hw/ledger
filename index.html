@@ -427,7 +427,11 @@ table.cmp td,table.cmp th{white-space:nowrap}
       <div class="field"><textarea id="cPays" rows="2" aria-label="결제수단 목록"></textarea></div>
     </div>
     <label class="chk writer-only"><input type="checkbox" id="renameTx" checked> 주머니·대분류 이름을 바꾸면, 이 버전 기간의 기존 기록 이름도 함께 바꾸기</label>
-    <div class="btns writer-only"><button class="btn primary" id="cfgSave">이 버전 저장</button><span class="hint" id="cfgMsg"></span></div>
+    <div class="btns writer-only"><button class="btn primary" id="cfgSave">이 버전 저장</button><button class="btn" id="cfgReset" title="저장하지 않은 수정 내용을 버리고 저장된 상태로 되돌려요">편집 취소</button><span class="hint" id="cfgMsg"></span></div>
+    <div class="panel">
+      <div class="phead"><h2>변경 이력 · 되돌리기</h2><span class="hint">설정을 저장할 때마다 바로 전 상태가 기록돼요 (최근 30개)</span></div>
+      <div class="scroll"><table id="cHist"></table></div>
+    </div>
   </section>
 </main>
 <div class="toast" id="toast" hidden></div>
@@ -733,6 +737,7 @@ let draft=null;
 function renderCfg(){
   if(!S.editVer||!S.versions.some(v=>v.from===S.editVer)) S.editVer=cfgFor(ymOf(todayStr())).from;
   draft=JSON.parse(JSON.stringify(S.versions.find(v=>v.from===S.editVer)||S.cfg)); renderCfg._drawn=true; drawVer(); drawCfg();
+  if(!S.hist) loadHistory(); else drawHistory();
 }
 function drawVer(){
   const now=cfgFor(ymOf(todayStr())).from;
@@ -759,8 +764,35 @@ function collectCfg(){
   const cats={}; document.querySelectorAll("[data-cb]").forEach(el=>{ const b=el.value.trim(); const s=document.querySelector(`[data-cs="${el.dataset.cb}"]`).value.split(",").map(x=>x.trim()).filter(Boolean); if(b) cats[b]=s; }); draft.cats=cats;
   draft.pays=$("cPays").value.split(",").map(x=>x.trim()).filter(Boolean);
 }
-async function writeVersions(vers){
+// 저장 직전 상태를 이력에 남기고 새 설정을 씀 (이력 표가 없으면 이력만 건너뜀)
+async function writeVersions(vers,note,renames=[]){
+  const h=await sb.from("config_history").insert({data:{versions:S.versions},note,renames});
+  S.histOff=!!h.error;
   const {error}=await sb.from("config").upsert({id:1,data:{versions:vers},updated_at:new Date().toISOString()}); errMsg(error);
+}
+async function loadHistory(){
+  const {data,error}=await sb.from("config_history").select("id,note,renames,created_at").order("id",{ascending:false}).limit(30);
+  S.histOff=!!error; S.hist=data||[]; drawHistory();
+}
+function drawHistory(){
+  if(S.histOff){ $("cHist").innerHTML=`<tr><td class="empty">이력 기능을 쓰려면 Supabase에서 schema_update_v2.sql을 한 번 실행해 주세요.</td></tr>`; return; }
+  if(!S.hist?.length){ $("cHist").innerHTML=`<tr><td class="empty">아직 변경 이력이 없어요. 설정을 저장하면 여기에 쌓여요.</td></tr>`; return; }
+  $("cHist").innerHTML=`<tr><th>변경 시각</th><th>무엇을 바꿨나</th><th class="writer-only"></th></tr>`+S.hist.map(h=>`<tr><td class="num" style="white-space:nowrap">${h.created_at.slice(0,16).replace("T"," ")}</td><td>${esc(h.note||"설정 변경")}${h.renames?.length?`<br><small style="color:var(--faint)">기록 이름 변경 ${h.renames.length}건 포함 (되돌리면 함께 원래대로)</small>`:""}</td><td class="writer-only r"><button class="btn small" data-hist="${h.id}">이 변경 전으로 되돌리기</button></td></tr>`).join("");
+  $("cHist").querySelectorAll("[data-hist]").forEach(b=>b.onclick=()=>restoreHist(+b.dataset.hist,b));
+}
+async function restoreHist(id,btn){
+  if(!btn.dataset.armed){ btn.dataset.armed="1"; btn.textContent="한 번 더 누르면 되돌려요"; return; }
+  btn.disabled=true;
+  try{
+    const {data:row,error}=await sb.from("config_history").select("data").eq("id",id).single(); errMsg(error);
+    // 이 변경과 그 이후 변경에서 바뀐 기록 이름을 최신 것부터 거꾸로 되돌림
+    const undo=S.hist.filter(h=>h.id>=id).flatMap(h=>[...(h.renames||[])].reverse());
+    for(const x of undo){ let q=sb.from("tx").update({[x.col]:x.from,updated_at:new Date().toISOString()}).eq(x.col,x.to); if(x.gte) q=q.gte("ym",x.gte); if(x.lt) q=q.lt("ym",x.lt); const r=await q; errMsg(r.error); }
+    const target=S.hist.find(h=>h.id===id);
+    await writeVersions(row.data.versions||[],`되돌리기: ${target?.created_at.slice(0,16).replace("T"," ")} "${target?.note||""}" 이전 상태로`);
+    if(undo.length) await loadTx();
+    await loadCfg(); S.editVer=null; renderCfg(); render(); await loadHistory(); toast("설정을 되돌렸어요.");
+  }catch(_){ btn.disabled=false; }
 }
 async function saveCfg(){
   collectCfg();
@@ -772,14 +804,31 @@ async function saveCfg(){
   const ok=Object.keys(orig.cats), nk=Object.keys(draft.cats); nk.forEach((k,i)=>{ if(ok[i]&&ok[i]!==k&&!ok.includes(k)) ren.push({col:"big",from:ok[i],to:k}); });
   try{
     const vers=S.versions.map((v,i)=>i===idx?{...draft,from:orig.from}:v);
-    await writeVersions(vers);
+    const doRen=ren.length&&$("renameTx").checked;
+    const renRec=doRen?ren.map(x=>({...x,gte:orig.from>"2000-01"?orig.from:null,lt:next?next.from:null})):[];
+    const what=describeChange(orig,draft);
+    await writeVersions(vers,`${verLabel(orig.from)} 설정 수정${what?" — "+what:""}`,renRec);
     let moved=0;
-    if(ren.length&&$("renameTx").checked){
-      for(const x of ren){ let q=sb.from("tx").update({[x.col]:x.to,updated_at:new Date().toISOString()}).eq(x.col,x.from); if(orig.from>"2000-01") q=q.gte("ym",orig.from); if(next) q=q.lt("ym",next.from); const {error}=await q; errMsg(error); moved++; }
+    if(doRen){
+      for(const x of renRec){ let q=sb.from("tx").update({[x.col]:x.to,updated_at:new Date().toISOString()}).eq(x.col,x.from); if(x.gte) q=q.gte("ym",x.gte); if(x.lt) q=q.lt("ym",x.lt); const {error}=await q; errMsg(error); moved++; }
       await loadTx();
     }
+    loadHistory();
     $("cfgMsg").textContent="저장했어요."; toast(moved?`설정 저장 + 기존 기록 이름 ${moved}건 변경`:"설정을 저장했어요."); await loadCfg(); renderCfg(); render();
   }catch(_){}
+}
+// 무엇이 바뀌었는지 짧게 요약 (이력 표시용)
+function describeChange(o,n){
+  const out=[], names=x=>x.map(p=>p.name);
+  const op=names(o.pockets), np=names(n.pockets);
+  np.filter(x=>!op.includes(x)).forEach(x=>out.push(`주머니 +${x}`)); op.filter(x=>!np.includes(x)).forEach(x=>out.push(`주머니 −${x}`));
+  n.pockets.forEach(p=>{ const q=o.pockets.find(x=>x.name===p.name); if(q&&(q.deduct!==p.deduct||q.ratio!==p.ratio)) out.push(`${p.name} 규칙`); });
+  const ok=Object.keys(o.cats), nk=Object.keys(n.cats);
+  nk.filter(x=>!ok.includes(x)).forEach(x=>out.push(`대분류 +${x}`)); ok.filter(x=>!nk.includes(x)).forEach(x=>out.push(`대분류 −${x}`));
+  nk.filter(x=>ok.includes(x)&&o.cats[x].join()!==n.cats[x].join()).forEach(x=>out.push(`${x} 소분류`));
+  if(JSON.stringify(o.fixed)!==JSON.stringify(n.fixed)) out.push("고정비");
+  if(o.pays.join()!==n.pays.join()) out.push("결제수단");
+  return out.slice(0,6).join(", ")+(out.length>6?" 외":"");
 }
 async function newVersion(){
   const from=$("newVerFrom").value; if(!from) return;
@@ -787,13 +836,13 @@ async function newVersion(){
   collectCfg();
   const base=JSON.parse(JSON.stringify(cfgFor(from))); base.from=from;
   const vers=[...S.versions,base].sort((x,y)=>x.from<y.from?-1:1);
-  try{ await writeVersions(vers); await loadCfg(); S.editVer=from; renderCfg(); render(); toast(`${from}부터 적용되는 새 버전을 만들었어요. 내용을 고치고 '이 버전 저장'을 누르세요.`); }catch(_){}
+  try{ await writeVersions(vers,`${from}부터 새 버전 만들기`); loadHistory(); await loadCfg(); S.editVer=from; renderCfg(); render(); toast(`${from}부터 적용되는 새 버전을 만들었어요. 내용을 고치고 '이 버전 저장'을 누르세요.`); }catch(_){}
 }
 async function delVersion(){
   const b=$("delVer"); if(!b.dataset.armed){ b.dataset.armed="1"; b.textContent="한 번 더 누르면 삭제"; return; }
   const vers=S.versions.filter(v=>v.from!==S.editVer); if(!vers.length) return;
   if(vers[0].from>"2000-01") vers[0]={...vers[0],from:"2000-01"};
-  try{ await writeVersions(vers); await loadCfg(); S.editVer=null; renderCfg(); render(); toast("버전을 삭제했어요."); }catch(_){}
+  try{ await writeVersions(vers,`${verLabel(S.editVer)} 버전 삭제`); loadHistory(); await loadCfg(); S.editVer=null; renderCfg(); render(); toast("버전을 삭제했어요."); }catch(_){}
 }
 
 /* ---------- 보고서 ---------- */
@@ -973,7 +1022,7 @@ $("flFrom").addEventListener("change",e=>{ if(e.target.value){ S.txFrom=e.target
 $("flTo").addEventListener("change",e=>{ if(e.target.value){ S.txTo=e.target.value; render(); } });
 document.querySelectorAll("[data-q]").forEach(b=>b.onclick=()=>quickRange(b.dataset.q));
 document.querySelectorAll("[data-tm]").forEach(b=>b.onclick=()=>{ S.trendMode=b.dataset.tm; saveTrend(); renderTrend(); });
-$("mForm").onsubmit=saveMonth; $("cfgSave").onclick=saveCfg; $("newVer").onclick=newVersion; $("delVer").onclick=delVersion;
+$("mForm").onsubmit=saveMonth; $("cfgSave").onclick=saveCfg; $("newVer").onclick=newVersion; $("cfgReset").onclick=()=>{ renderCfg(); $("cfgMsg").textContent="저장된 상태로 되돌렸어요."; }; $("delVer").onclick=delVersion;
 $("addFixed").onclick=()=>{ collectCfg(); draft.fixed.push({name:"",small:Object.values(draft.cats).flat()[0]||"",amount:0,day:1}); drawCfg(); };
 $("addPocket").onclick=()=>{ collectCfg(); draft.pockets.push({name:"새 주머니",deduct:false,ratio:0}); drawCfg(); };
 $("addCat").onclick=()=>{ collectCfg(); draft.cats["새 분류"]=["기타"]; drawCfg(); };
