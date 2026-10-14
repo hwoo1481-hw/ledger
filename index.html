@@ -723,8 +723,19 @@ function renderMonth(c){
   $("mTitle").textContent=`${S.ym} 입력`;
   if(mFormYM!==S.ym||!$("v-month").contains(document.activeElement)){ const m=monthDoc(S.ym); for(const id in MF){ const v=m[MF[id]]; $(id).value=v==null?"":won(v); $(id).readOnly=!canWrite(); } mFormYM=S.ym; }
   const b=c.bal;
-  $("tBal").innerHTML=[["월초 잔액",b.open,b.openSrc],["(+) 들어온 돈",b.inflow,"월급·식사비·정산·기타·환급완료"],["   그중 환급 입금",b.refundIn,""],["(−) 와이프 송금",b.toWife,""],["(−) 이번 달 지출",b.spend,"신용카드 포함, 쓴 날 기준"],["= 월말 계산잔액",b.close,"",true],["실제 통장잔액",b.actual,"직접 확인"],["차이 (실제 − 계산)",b.diff,"대부분 미결제 카드값"]]
-    .map(([a,v,n,s])=>`<tr${s?' class="total"':''}><td>${a}</td><td class="r num ${v<0?'neg':''}">${v==null?'<span style="color:var(--faint)">미입력</span>':won(v)}</td><td style="font-size:12px;color:var(--faint)">${n}</td></tr>`).join("");
+  const m=c.m, row=(a,v,n,s)=>`<tr${s?' class="total"':''}><td>${a}</td><td class="r num ${v<0?'neg':''}">${v==null?'<span style="color:var(--faint)">미입력</span>':won(v)}</td><td style="font-size:12px;color:var(--faint)">${n||""}</td></tr>`;
+  $("tBal").innerHTML=[
+    row("월초 잔액",b.open,b.openSrc),
+    row("(+) 월급",m.salary,""),
+    row("(−) 와이프에게 보낸 돈",m.toWife==null?null:-m.toWife,"용돈·고정비만 남기고 송금"),
+    row("(+) 식사비 받은 돈",m.mealIn,"와이프가 돌려준 식사비 (새로 들어온 돈)"),
+    row("(+) 정산 받은 돈",m.settleIn,"생활·데이트 등 내가 먼저 낸 돈"),
+    row("(+) 기타 입금",m.otherIn,""),
+    row("(+) 환급 입금",b.refundIn,"환급완료 처리된 금액"),
+    row("(−) 이번 달 지출",-b.spend,"신용카드 포함, 쓴 날 기준"),
+    row("= 월말 계산잔액",b.close,"",true),
+    row("실제 통장잔액",b.actual,"직접 확인"),
+    row("차이 (실제 − 계산)",b.diff,"대부분 미결제 카드값")].join("");
 }
 async function saveMonth(e){
   e.preventDefault(); if(!canWrite()) return;
