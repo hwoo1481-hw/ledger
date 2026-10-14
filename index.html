@@ -192,6 +192,10 @@ table.cmp td,table.cmp th{white-space:nowrap}
 .chg{font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap}
 .chg.bad{color:var(--bad)}
 .chg.good{color:var(--good)}
+/* 설정 버전 */
+.verbar{display:flex;flex-wrap:wrap;gap:6px}
+.verbar .chip small{font-weight:400;color:var(--muted);margin-left:4px}
+.vsel{height:30px;border:1px solid var(--line);border-radius:6px;background:var(--bg);padding:0 6px;font-size:12px}
 </style>
 </head>
 <body>
@@ -393,6 +397,17 @@ table.cmp td,table.cmp th{white-space:nowrap}
   <!-- 설정 -->
   <section class="view" id="v-cfg" hidden>
     <div class="panel">
+      <div class="phead"><h2>설정 버전</h2><span class="hint">설정은 '적용 시작 월'부터 반영돼요. 그 이전 달은 당시 설정으로 계산됩니다.</span></div>
+      <div class="verbar" id="verList"></div>
+      <div class="btns writer-only">
+        <label for="newVerFrom" class="hint">새 버전 적용 시작 월</label>
+        <select id="newVerFrom" class="vsel"></select>
+        <button class="btn small" id="newVer">새 버전 만들기</button>
+        <button class="btn small danger" id="delVer">이 버전 삭제</button>
+      </div>
+      <p class="hint" id="verInfo"></p>
+    </div>
+    <div class="panel">
       <div class="phead"><h2>주머니</h2><span class="hint">개인예산 차감 여부 · 와이프 부담비율(정산받을 비율)</span></div>
       <div class="scroll tbl-in"><table id="cPocket"></table></div>
       <div class="btns writer-only"><button class="btn small" id="addPocket">+ 주머니 추가</button></div>
@@ -411,7 +426,8 @@ table.cmp td,table.cmp th{white-space:nowrap}
       <div class="phead"><h2>결제수단</h2><span class="hint">쉼표로 구분</span></div>
       <div class="field"><textarea id="cPays" rows="2" aria-label="결제수단 목록"></textarea></div>
     </div>
-    <div class="btns writer-only"><button class="btn primary" id="cfgSave">설정 저장</button><span class="hint" id="cfgMsg"></span></div>
+    <label class="chk writer-only"><input type="checkbox" id="renameTx" checked> 주머니·대분류 이름을 바꾸면, 이 버전 기간의 기존 기록 이름도 함께 바꾸기</label>
+    <div class="btns writer-only"><button class="btn primary" id="cfgSave">이 버전 저장</button><span class="hint" id="cfgMsg"></span></div>
   </section>
 </main>
 <div class="toast" id="toast" hidden></div>
@@ -435,15 +451,22 @@ const DEFAULT_CFG = {
   pays:["국민체크카드","삼성신용카드","롯데신용카드","국민신용카드(복지)","신한체크교통카드","네이버페이","카카오페이","계좌이체","현금"],
   defaults:{allowance:200000,mealUnit:8000}
 };
-const S = { cfg:DEFAULT_CFG, tx:[], months:{}, notes:{}, ym:ymOf(todayStr()), tab:"dash", editId:null, role:null,
+const S = { cfg:DEFAULT_CFG, versions:[], editVer:null, tx:[], months:{}, notes:{}, ym:ymOf(todayStr()), tab:"dash", editId:null, role:null,
   trendMode:"pocket", trendSel:{pocket:null,cat:null}, txFrom:null, txTo:null };
 try { const t=localStorage.getItem("lg.tab"); if(t) S.tab=t; const tr=JSON.parse(localStorage.getItem("lg.trend")||"null"); if(tr){ S.trendMode=tr.mode||"pocket"; S.trendSel=tr.sel||S.trendSel; } } catch(e){}
 const fmtD = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 const monthRange = ym => { const [y,m]=ym.split("-").map(Number); return [`${ym}-01`,`${ym}-${pad(new Date(y,m,0).getDate())}`]; };
 const shortWon = n => { const v=Math.abs(n); if(v>=1e8) return (n/1e8).toFixed(1).replace(/\.0$/,"")+"억"; if(v>=1e4) return Math.round(n/1e4).toLocaleString("ko-KR")+"만"; return won(n); };
-const catColor = i => `hsl(${(i*47+188)%360} 45% 52%)`;
+const catColor = name => `hsl(${(Math.max(0,allCatNames().indexOf(name))*47+188)%360} 45% 52%)`;
 const canWrite = () => S.role==="writer";
-const pocketColor = i => `var(--p${(i%5)+1})`;
+/* 설정 버전: 월별로 적용되는 설정 */
+const cfgFor = ym => { let v=S.versions[0]||DEFAULT_CFG; for(const x of S.versions) if(x.from<=ym) v=x; return v; };
+const verLabel = f => f<="2000-01"?"처음부터":`${f}부터`;
+function pocketDef(name,ym){ const c=cfgFor(ym).pockets.find(p=>p.name===name); if(c) return c; for(let i=S.versions.length-1;i>=0;i--){ const p=S.versions[i].pockets.find(p=>p.name===name); if(p) return p; } return {name,deduct:false,ratio:0}; }
+function unionNames(listsFn,txKey){ const s=[]; const cur=cfgFor(ymOf(todayStr())); [cur,...S.versions.slice().reverse()].forEach(v=>listsFn(v).forEach(n=>{ if(!s.includes(n)) s.push(n); })); S.tx.forEach(t=>{ if(t[txKey]&&!s.includes(t[txKey])) s.push(t[txKey]); }); return s; }
+const allPocketNames = () => unionNames(v=>v.pockets.map(p=>p.name),"pocket");
+const allCatNames = () => unionNames(v=>Object.keys(v.cats),"big");
+const pColor = name => `var(--p${(Math.max(0,allPocketNames().indexOf(name))%5)+1})`;
 function toast(msg){ const t=$("toast"); t.textContent=msg; t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true,2600); }
 
 /* ---------- Supabase ---------- */
@@ -461,7 +484,10 @@ const M_IN = r => { const o={}; for(const k in MCOL){ const v=r[MCOL[k]]; o[k]=v
 
 async function loadTx(){ const out=[]; for(let from=0;;from+=1000){ const {data,error}=await sb.from("tx").select("*").order("date").range(from,from+999); if(error) throw error; out.push(...data.map(TX_IN)); if(data.length<1000) break; } S.tx=out; }
 async function loadMonths(){ const {data,error}=await sb.from("months").select("*"); if(error) throw error; S.months={}; data.forEach(r=>S.months[r.ym]=M_IN(r)); }
-async function loadCfg(){ const {data,error}=await sb.from("config").select("data").eq("id",1).maybeSingle(); if(error) throw error; S.cfg = data?.data ? {...DEFAULT_CFG,...data.data} : DEFAULT_CFG; formInit=false; renderCfg._drawn=false; }
+async function loadCfg(){ const {data,error}=await sb.from("config").select("data").eq("id",1).maybeSingle(); if(error) throw error;
+  const d=data?.data; let vers=d?.versions?.length?d.versions:[{from:"2000-01",...(d||DEFAULT_CFG)}];
+  S.versions=vers.map(v=>{ const o={...DEFAULT_CFG,...v}; delete o.versions; delete o.updatedAt; return o; }).sort((x,y)=>x.from<y.from?-1:1);
+  S.cfg=cfgFor(ymOf(todayStr())); formInit=false; renderCfg._drawn=false; }
 async function loadNotes(){ const {data,error}=await sb.from("ai_notes").select("*"); if(error) throw error; S.notes={}; data.forEach(n=>S.notes[`${n.ym_from}~${n.ym_to}`]=n); }
 const reloaders={tx:loadTx,months:loadMonths,config:loadCfg,ai_notes:loadNotes};
 const pending={};
@@ -491,9 +517,9 @@ $("logout").onclick=async()=>{ await sb.auth.signOut(); location.reload(); };
 (async()=>{ const {data}=await sb.auth.getSession(); if(data.session) startApp(); else $("login").hidden=false; })();
 
 /* ---------- 계산 ---------- */
-function monthDoc(ym){ const m=S.months[ym]||{}; const d=S.cfg.defaults||{}; return { salary:m.salary??null, allowance:m.allowance??d.allowance??200000, workdays:m.workdays??null, mealUnit:m.mealUnit??d.mealUnit??8000, toWife:m.toWife??null, mealIn:m.mealIn??null, settleIn:m.settleIn??null, otherIn:m.otherIn??null, openBal:m.openBal??null, actualBal:m.actualBal??null }; }
+function monthDoc(ym){ const m=S.months[ym]||{}; const d=cfgFor(ym).defaults||{}; return { salary:m.salary??null, allowance:m.allowance??d.allowance??200000, workdays:m.workdays??null, mealUnit:m.mealUnit??d.mealUnit??8000, toWife:m.toWife??null, mealIn:m.mealIn??null, settleIn:m.settleIn??null, otherIn:m.otherIn??null, openBal:m.openBal??null, actualBal:m.actualBal??null }; }
 function earliestYM(){ let e=null; for (const t of S.tx) if(!e||t.ym<e) e=t.ym; for (const k in S.months) if(!e||k<e) e=k; return e; }
-const fixedTotal = () => S.cfg.fixed.reduce((a,f)=>a+(Number(f.amount)||0),0);
+const fixedTotal = (ym=S.ym) => cfgFor(ym).fixed.reduce((a,f)=>a+(Number(f.amount)||0),0);
 const txOf = ym => S.tx.filter(t=>t.ym===ym);
 const _bal = {};
 function balance(ym){
@@ -510,19 +536,20 @@ function balance(ym){
 }
 function compute(ym){
   const m=monthDoc(ym), txs=txOf(ym);
-  const pockets=S.cfg.pockets.map((p,i)=>{ const ts=txs.filter(t=>t.pocket===p.name); const amt=ts.reduce((a,t)=>a+t.amount,0), ref=ts.reduce((a,t)=>a+t.refund,0), net=amt-ref; return {...p,i,amt,ref,net,settle:Math.round(net*(Number(p.ratio)||0)),count:ts.length}; });
+  const cfg=cfgFor(ym), pn=cfg.pockets.map(p=>p.name); txs.forEach(t=>{ if(!pn.includes(t.pocket)) pn.push(t.pocket); });
+  const pockets=pn.map((name,i)=>{ const p={...pocketDef(name,ym),name,legacy:!cfg.pockets.some(x=>x.name===name)}; const ts=txs.filter(t=>t.pocket===p.name); const amt=ts.reduce((a,t)=>a+t.amount,0), ref=ts.reduce((a,t)=>a+t.refund,0), net=amt-ref; return {...p,i,amt,ref,net,settle:Math.round(net*(Number(p.ratio)||0)),count:ts.length}; });
   const tot=k=>pockets.reduce((a,p)=>a+p[k],0);
   const budget=(m.allowance||0)+(m.workdays||0)*(m.mealUnit||0);
   const used=pockets.filter(p=>p.deduct).reduce((a,p)=>a+p.net,0);
-  const fixed=S.cfg.fixed.map(f=>{ const paid=txs.filter(t=>t.small===f.small).reduce((a,t)=>a+t.amount,0); return {...f,paid,status:paid>0?"완료":(!(Number(f.amount)>0)?"-":"미납")}; });
-  const cats=Object.keys(S.cfg.cats).map(b=>({big:b,net:txs.filter(t=>t.big===b).reduce((a,t)=>a+t.amount-t.refund,0)}));
-  const known=new Set(Object.keys(S.cfg.cats)); const other=txs.filter(t=>!known.has(t.big)).reduce((a,t)=>a+t.amount-t.refund,0);
-  if (other) cats.push({big:"(미분류)",net:other});
-  const pays=S.cfg.pays.map(p=>({pay:p,amt:txs.filter(t=>t.pay===p).reduce((a,t)=>a+t.amount,0),n:txs.filter(t=>t.pay===p).length})).filter(p=>p.n>0);
+  const fixed=cfg.fixed.map(f=>{ const paid=txs.filter(t=>t.small===f.small).reduce((a,t)=>a+t.amount,0); return {...f,paid,status:paid>0?"완료":(!(Number(f.amount)>0)?"-":"미납")}; });
+  const bn=Object.keys(cfg.cats); txs.forEach(t=>{ if(!bn.includes(t.big)) bn.push(t.big); });
+  const cats=bn.map(b=>({big:b,net:txs.filter(t=>t.big===b).reduce((a,t)=>a+t.amount-t.refund,0)}));
+  const payN=[...cfg.pays]; txs.forEach(t=>{ if(t.pay&&!payN.includes(t.pay)) payN.push(t.pay); });
+  const pays=payN.map(p=>({pay:p,amt:txs.filter(t=>t.pay===p).reduce((a,t)=>a+t.amount,0),n:txs.filter(t=>t.pay===p).length})).filter(p=>p.n>0);
   const settle=tot("settle");
-  return { ym,m,txs,pockets,amt:tot("amt"),ref:tot("ref"),net:tot("net"),budget,used,remain:budget-used,fixed,fixedPlan:fixedTotal(),
+  return { ym,m,txs,pockets,amt:tot("amt"),ref:tot("ref"),net:tot("net"),budget,used,remain:budget-used,fixed,fixedPlan:fixedTotal(ym),
     fixedPaid:pockets.filter(p=>p.name==="고정비").reduce((a,p)=>a+p.amt,0),cats,pays,settle,settleLeft:settle-(m.settleIn||0),bal:balance(ym),
-    wifeRec:m.salary==null?null:m.salary-(m.allowance||0)-fixedTotal() };
+    wifeRec:m.salary==null?null:m.salary-(m.allowance||0)-fixedTotal(ym) };
 }
 
 /* ---------- 렌더 ---------- */
@@ -562,7 +589,7 @@ function renderDash(c){
   $("dashAi").hidden=!note; if(note){ $("dashAiText").innerHTML=aiHtml(note.text); $("dashAiMeta").textContent=`${note.created_at.slice(0,10)} · ${note.model||"Gemini"}`; }
 
   $("tPocket").innerHTML=`<tr><th>주머니</th><th class="r">지출</th><th class="r">환급예정</th><th class="r">실부담</th><th class="c">개인예산</th><th class="r">받을 금액</th></tr>`+
-    c.pockets.map(p=>`<tr><td><span class="dot" style="background:${pocketColor(p.i)}"></span>${esc(p.name)}</td><td class="r num">${won(p.amt)}</td><td class="r num">${won(p.ref)}</td><td class="r num">${won(p.net)}</td><td class="c">${p.deduct?'<span class="pill mute">차감</span>':'-'}</td><td class="r num">${p.settle?won(p.settle):'-'}</td></tr>`).join("")+
+    c.pockets.map(p=>`<tr><td><span class="dot" style="background:${pColor(p.name)}"></span>${esc(p.name)}${p.legacy?' <small style="color:var(--faint)">(이전 설정)</small>':""}</td><td class="r num">${won(p.amt)}</td><td class="r num">${won(p.ref)}</td><td class="r num">${won(p.net)}</td><td class="c">${p.deduct?'<span class="pill mute">차감</span>':'-'}</td><td class="r num">${p.settle?won(p.settle):'-'}</td></tr>`).join("")+
     `<tr class="total"><td>합계</td><td class="r num">${won(c.amt)}</td><td class="r num">${won(c.ref)}</td><td class="r num">${won(c.net)}</td><td></td><td class="r num">${won(c.settle)}</td></tr>`;
   $("fixHint").textContent=`예정 합계 ${won(c.fixedPlan)}원`;
   $("tFixed").innerHTML=`<tr><th>항목</th><th class="c">납부일</th><th class="r">예정</th><th class="r">납부</th><th class="c">상태</th></tr>`+
@@ -584,8 +611,11 @@ function renderDash(c){
 
 /* ---------- 12개월 추이 ---------- */
 function trendSeries(){
-  if(S.trendMode==="cat") return Object.keys(S.cfg.cats).map((k,i)=>({key:k,color:catColor(i),get:t=>t.big===k}));
-  return S.cfg.pockets.map((p,i)=>({key:p.name,color:pocketColor(i),get:t=>t.pocket===p.name}));
+  const months=[...Array(12)].map((_,i)=>addM(S.ym,i-11)), inWin=new Set(months);
+  const used=k=>S.tx.some(t=>inWin.has(t.ym)&&(S.trendMode==="cat"?t.big===k:t.pocket===k));
+  if(S.trendMode==="cat"){ const cur=Object.keys(cfgFor(S.ym).cats); return allCatNames().filter(k=>cur.includes(k)||used(k)).map(k=>({key:k,color:catColor(k),get:t=>t.big===k})); }
+  const cur=cfgFor(S.ym).pockets.map(p=>p.name);
+  return allPocketNames().filter(k=>cur.includes(k)||used(k)).map(k=>({key:k,color:pColor(k),get:t=>t.pocket===k}));
 }
 function saveTrend(){ try{ localStorage.setItem("lg.trend",JSON.stringify({mode:S.trendMode,sel:S.trendSel})); }catch(e){} }
 function renderTrend(){
@@ -617,20 +647,22 @@ function renderTrend(){
 
 /* ---------- 내역 ---------- */
 function fillSelect(sel,items,val,blank){ sel.innerHTML=(blank?`<option value="">${blank}</option>`:"")+items.map(i=>`<option ${i===val?"selected":""}>${esc(i)}</option>`).join(""); if(val&&!items.includes(val)&&!blank) sel.insertAdjacentHTML("beforeend",`<option selected>${esc(val)}</option>`); }
-function syncSmall(val){ fillSelect($("fSmall"), S.cfg.cats[$("fBig").value]||[], val); }
+const formCfg = () => cfgFor(ymOf($("fDate").value||todayStr()));
+function syncSmall(val){ fillSelect($("fSmall"), formCfg().cats[$("fBig").value]||[], val); }
 let formInit=false;
 function initForm(){
   if(formInit) return;
-  fillSelect($("fPocket"),S.cfg.pockets.map(p=>p.name),$("fPocket").value||"개인");
-  fillSelect($("fBig"),Object.keys(S.cfg.cats),$("fBig").value||"식비"); syncSmall($("fSmall").value);
-  fillSelect($("fPay"),S.cfg.pays,$("fPay").value||S.cfg.pays[0]);
   if(!$("fDate").value) $("fDate").value=todayStr();
+  const fc=formCfg();
+  fillSelect($("fPocket"),fc.pockets.map(p=>p.name),$("fPocket").value||"개인");
+  fillSelect($("fBig"),Object.keys(fc.cats),$("fBig").value||"식비"); syncSmall($("fSmall").value);
+  fillSelect($("fPay"),fc.pays,$("fPay").value||fc.pays[0]);
   formInit=true;
 }
 function renderTx(c){
   initForm();
-  fillSelect($("flPocket"),S.cfg.pockets.map(p=>p.name),$("flPocket").value,"전체 주머니");
-  fillSelect($("flBig"),Object.keys(S.cfg.cats),$("flBig").value,"전체 분류");
+  fillSelect($("flPocket"),allPocketNames(),$("flPocket").value,"전체 주머니");
+  fillSelect($("flBig"),allCatNames(),$("flBig").value,"전체 분류");
   if(!S.txFrom) [S.txFrom,S.txTo]=monthRange(S.ym);
   $("flFrom").value=S.txFrom; $("flTo").value=S.txTo;
   let da=S.txFrom, db=S.txTo; if(da>db) [da,db]=[db,da];
@@ -641,9 +673,8 @@ function renderTx(c){
   $("listSum").textContent=`${rows.length}건 · ${won(sum)}원`+(days>1?` · 일평균 ${won(sum/days)}원`:"");
   $("listFoot").textContent=rows.length>10?`${rows.length}건 중 10건씩 보여요. 목록 안에서 스크롤하세요.`:"";
   $("tList").innerHTML=rows.length?`<tr><th>날짜</th><th>주머니</th><th>분류</th><th>내역</th><th>결제</th><th class="r">금액</th><th class="r">환급</th></tr>`+rows.map(t=>{
-    const pi=S.cfg.pockets.findIndex(p=>p.name===t.pocket);
     const ref=t.refund>0?`<button class="refbtn" data-tg="${t.id}" ${canWrite()?"":"disabled"} title="눌러서 환급 상태 변경"><span class="pill ${t.refundDone?'ok':'wait'}">${t.refundDone?'완료':'대기'} ${won(t.refund)}</span></button>`:(/복지/.test(t.pay)?'<span class="pill wait" title="복지카드인데 환급예정액이 비어 있어요">확인</span>':"");
-    return `<tr data-id="${t.id}" class="${S.editId===t.id?'editing':''}"><td class="date">${da.slice(0,4)!==db.slice(0,4)?t.date.slice(2).replace(/-/g,"."):t.date.slice(5).replace("-",".")}</td><td><span class="dot" style="background:${pocketColor(Math.max(0,pi))}"></span>${esc(t.pocket)}</td><td style="white-space:nowrap">${esc(t.big)}<small style="display:block;color:var(--faint);font-size:11px">${esc(t.small)}</small></td><td class="memo">${esc(t.memo)}</td><td style="font-size:12px;color:var(--muted)">${esc(t.pay)}</td><td class="r num">${won(t.amount)}</td><td class="r">${ref}</td></tr>`;
+    return `<tr data-id="${t.id}" class="${S.editId===t.id?'editing':''}"><td class="date">${da.slice(0,4)!==db.slice(0,4)?t.date.slice(2).replace(/-/g,"."):t.date.slice(5).replace("-",".")}</td><td><span class="dot" style="background:${pColor(t.pocket)}"></span>${esc(t.pocket)}</td><td style="white-space:nowrap">${esc(t.big)}<small style="display:block;color:var(--faint);font-size:11px">${esc(t.small)}</small></td><td class="memo">${esc(t.memo)}</td><td style="font-size:12px;color:var(--muted)">${esc(t.pay)}</td><td class="r num">${won(t.amount)}</td><td class="r">${ref}</td></tr>`;
   }).join(""):`<tr><td colspan="7" class="empty">이 기간에 기록이 없어요.${canWrite()?" 위에서 지출을 기록해 보세요.":""}</td></tr>`;
   if(canWrite()){
     $("tList").querySelectorAll("tr[data-id]").forEach(tr=>tr.onclick=e=>{ if(e.target.closest("[data-tg]")) return; startEdit(tr.dataset.id); });
@@ -653,7 +684,7 @@ function renderTx(c){
 function startEdit(id){
   const t=S.tx.find(x=>x.id===id); if(!t) return;
   S.editId=id; $("fDate").value=t.date; $("fAmt").value=won(t.amount);
-  fillSelect($("fPocket"),S.cfg.pockets.map(p=>p.name),t.pocket); fillSelect($("fBig"),Object.keys(S.cfg.cats),t.big); syncSmall(t.small); fillSelect($("fPay"),S.cfg.pays,t.pay);
+  const fc=formCfg(); fillSelect($("fPocket"),fc.pockets.map(p=>p.name),t.pocket); fillSelect($("fBig"),Object.keys(fc.cats),t.big); syncSmall(t.small); fillSelect($("fPay"),fc.pays,t.pay);
   $("fMemo").value=t.memo; $("fRef").value=t.refund?won(t.refund):""; $("fRefDone").checked=t.refundDone;
   $("formTitle").textContent="기록 수정"; $("fSave").textContent="수정 저장"; $("fCancel").hidden=false; $("fDel").hidden=false; $("fDel").textContent="삭제"; $("fDel").dataset.armed="";
   window.scrollTo({top:0,behavior:"smooth"}); render();
@@ -697,10 +728,21 @@ async function saveMonth(e){
   try{ const {error}=await sb.from("months").upsert(row); errMsg(error); toast(`${S.ym} 저장했어요.`); await loadMonths(); render(); }catch(_){}
 }
 
-/* ---------- 설정 ---------- */
+/* ---------- 설정 (버전별) ---------- */
 let draft=null;
 function renderCfg(){
-  draft=JSON.parse(JSON.stringify(S.cfg)); renderCfg._drawn=true; drawCfg();
+  if(!S.editVer||!S.versions.some(v=>v.from===S.editVer)) S.editVer=cfgFor(ymOf(todayStr())).from;
+  draft=JSON.parse(JSON.stringify(S.versions.find(v=>v.from===S.editVer)||S.cfg)); renderCfg._drawn=true; drawVer(); drawCfg();
+}
+function drawVer(){
+  const now=cfgFor(ymOf(todayStr())).from;
+  $("verList").innerHTML=S.versions.map(v=>`<button type="button" class="chip" data-ver="${v.from}" aria-pressed="${v.from===S.editVer}">${verLabel(v.from)}${v.from===now?' <small>· 지금 적용 중</small>':v.from>now?' <small>· 예정</small>':''}</button>`).join("");
+  $("verList").querySelectorAll("[data-ver]").forEach(b=>b.onclick=()=>{ S.editVer=b.dataset.ver; renderCfg(); });
+  const idx=S.versions.findIndex(v=>v.from===S.editVer), next=S.versions[idx+1];
+  $("verInfo").textContent=`지금 편집 중: ${verLabel(S.editVer)}${next?` ~ ${addM(next.from,-1)}`:" (이후 계속)"} 기간에 적용되는 설정이에요.`;
+  const base=ymOf(todayStr()), opts=[...Array(25)].map((_,i)=>addM(base,i-12));
+  $("newVerFrom").innerHTML=opts.map(o=>`<option ${o===addM(base,1)?"selected":""}>${o}</option>`).join("");
+  $("delVer").hidden=S.versions.length<2; $("delVer").textContent="이 버전 삭제"; $("delVer").dataset.armed="";
 }
 function drawCfg(){
   const ro=canWrite()?"":"disabled"; const smalls=Object.values(draft.cats).flat();
@@ -717,9 +759,41 @@ function collectCfg(){
   const cats={}; document.querySelectorAll("[data-cb]").forEach(el=>{ const b=el.value.trim(); const s=document.querySelector(`[data-cs="${el.dataset.cb}"]`).value.split(",").map(x=>x.trim()).filter(Boolean); if(b) cats[b]=s; }); draft.cats=cats;
   draft.pays=$("cPays").value.split(",").map(x=>x.trim()).filter(Boolean);
 }
+async function writeVersions(vers){
+  const {error}=await sb.from("config").upsert({id:1,data:{versions:vers},updated_at:new Date().toISOString()}); errMsg(error);
+}
 async function saveCfg(){
   collectCfg();
-  try{ const {error}=await sb.from("config").upsert({id:1,data:draft,updated_at:new Date().toISOString()}); errMsg(error); $("cfgMsg").textContent="저장했어요."; toast("설정을 저장했어요."); await loadCfg(); render(); }catch(_){}
+  const idx=S.versions.findIndex(v=>v.from===S.editVer); if(idx<0) return;
+  const orig=S.versions[idx], next=S.versions[idx+1];
+  // 같은 줄의 이름이 바뀐 주머니/대분류 찾기
+  const ren=[];
+  draft.pockets.forEach((p,i)=>{ const o=orig.pockets[i]; if(o&&o.name!==p.name&&p.name) ren.push({col:"pocket",from:o.name,to:p.name}); });
+  const ok=Object.keys(orig.cats), nk=Object.keys(draft.cats); nk.forEach((k,i)=>{ if(ok[i]&&ok[i]!==k&&!ok.includes(k)) ren.push({col:"big",from:ok[i],to:k}); });
+  try{
+    const vers=S.versions.map((v,i)=>i===idx?{...draft,from:orig.from}:v);
+    await writeVersions(vers);
+    let moved=0;
+    if(ren.length&&$("renameTx").checked){
+      for(const x of ren){ let q=sb.from("tx").update({[x.col]:x.to,updated_at:new Date().toISOString()}).eq(x.col,x.from); if(orig.from>"2000-01") q=q.gte("ym",orig.from); if(next) q=q.lt("ym",next.from); const {error}=await q; errMsg(error); moved++; }
+      await loadTx();
+    }
+    $("cfgMsg").textContent="저장했어요."; toast(moved?`설정 저장 + 기존 기록 이름 ${moved}건 변경`:"설정을 저장했어요."); await loadCfg(); renderCfg(); render();
+  }catch(_){}
+}
+async function newVersion(){
+  const from=$("newVerFrom").value; if(!from) return;
+  if(S.versions.some(v=>v.from===from)){ S.editVer=from; renderCfg(); return toast(`${from} 버전이 이미 있어요. 그 버전을 열었어요.`); }
+  collectCfg();
+  const base=JSON.parse(JSON.stringify(cfgFor(from))); base.from=from;
+  const vers=[...S.versions,base].sort((x,y)=>x.from<y.from?-1:1);
+  try{ await writeVersions(vers); await loadCfg(); S.editVer=from; renderCfg(); render(); toast(`${from}부터 적용되는 새 버전을 만들었어요. 내용을 고치고 '이 버전 저장'을 누르세요.`); }catch(_){}
+}
+async function delVersion(){
+  const b=$("delVer"); if(!b.dataset.armed){ b.dataset.armed="1"; b.textContent="한 번 더 누르면 삭제"; return; }
+  const vers=S.versions.filter(v=>v.from!==S.editVer); if(!vers.length) return;
+  if(vers[0].from>"2000-01") vers[0]={...vers[0],from:"2000-01"};
+  try{ await writeVersions(vers); await loadCfg(); S.editVer=null; renderCfg(); render(); toast("버전을 삭제했어요."); }catch(_){}
 }
 
 /* ---------- 보고서 ---------- */
@@ -747,8 +821,11 @@ function comparison(r){
     const prevAvg=prevHas?pv.reduce((x,c)=>x+get(c,k),0)/n:null;
     const change=prevAvg?(avg-prevAvg)/Math.abs(prevAvg):null; return {k,vals,total,avg,prevAvg,change,better:better?.(k)||"down"}; });
   const metrics=build(["지출 총액","실부담","개인 사용","남은 개인예산","고정비 납부","와이프에게 받을 금액"],(c,k)=>({"지출 총액":c.amt,"실부담":c.net,"개인 사용":c.used,"남은 개인예산":c.remain,"고정비 납부":c.fixedPaid,"와이프에게 받을 금액":c.settle})[k],k=>k==="남은 개인예산"?"up":k==="와이프에게 받을 금액"?"none":"down");
-  const cats=build([...Object.keys(S.cfg.cats),"(미분류)"],(c,k)=>c.cats.find(x=>x.big===k)?.net||0).filter(x=>x.total||x.prevAvg).sort((x,y)=>y.total-x.total);
-  const pockets=build(S.cfg.pockets.map(p=>p.name),(c,k)=>c.pockets.find(p=>p.name===k)?.net||0);
+  const both=[...cur,...pv];
+  const catKeys=allCatNames().filter(k=>both.some(c=>c.cats.some(x=>x.big===k)));
+  const pocketKeys=allPocketNames().filter(k=>both.some(c=>c.pockets.some(p=>p.name===k)));
+  const cats=build(catKeys,(c,k)=>c.cats.find(x=>x.big===k)?.net||0).filter(x=>x.total||x.prevAvg).sort((x,y)=>y.total-x.total);
+  const pockets=build(pocketKeys,(c,k)=>c.pockets.find(p=>p.name===k)?.net||0).filter(x=>x.total||x.prevAvg||cfgFor(r[r.length-1]).pockets.some(p=>p.name===x.k));
   const hl=[];
   const tot=metrics[1];
   if(prevHas){
@@ -826,8 +903,9 @@ function dlXlsx(){
     const rowsOf=rows=>rows.map(x=>[x.k,...x.vals,...(cp.n>1?[x.total,Math.round(x.avg)]:[]),x.prevAvg==null?"-":Math.round(x.prevAvg),pctTxt(x.change)]);
     const aoa=[["기간 비교",rLabel(r),"직전 기간",rLabel(cp.prev)],[],...cp.hl.map(h=>["• "+h]),[],["[핵심 지표]"],hdr,...rowsOf(cp.metrics),[],["[카테고리별 실부담]"],hdr,...rowsOf(cp.cats),[],["[주머니별 실부담]"],hdr,...rowsOf(cp.pockets)];
     XLSX.utils.book_append_sheet(wb,sheet(aoa,[18,...r.map(()=>12),12,12,16,10]),"기간비교"); }
-  XLSX.utils.book_append_sheet(wb,sheet([["년월",...S.cfg.pockets.map(p=>p.name),"합계"],...cc.map(c=>[c.ym,...c.pockets.map(p=>p.net),c.net])]),"주머니별");
-  const bigs=Object.keys(S.cfg.cats);
+  const pks=allPocketNames().filter(k=>cc.some(c=>c.pockets.some(p=>p.name===k)));
+  XLSX.utils.book_append_sheet(wb,sheet([["년월",...pks,"합계"],...cc.map(c=>[c.ym,...pks.map(k=>c.pockets.find(p=>p.name===k)?.net||0),c.net])]),"주머니별");
+  const bigs=allCatNames().filter(k=>cc.some(c=>c.cats.some(x=>x.big===k&&x.net)));
   XLSX.utils.book_append_sheet(wb,sheet([["년월",...bigs],...cc.map(c=>[c.ym,...bigs.map(b=>c.cats.find(x=>x.big===b)?.net||0)])]),"카테고리별");
   const fx=[["년월","항목","예정액","납부","상태"]]; cc.forEach(c=>c.fixed.forEach(f=>fx.push([c.ym,f.name,Number(f.amount)||0,f.paid,f.status])));
   XLSX.utils.book_append_sheet(wb,sheet(fx,[10,16,12,12,8]),"고정비");
@@ -886,14 +964,16 @@ function quickRange(q){ const t=todayStr(), d=new Date(); let a,b=t;
   S.txFrom=a; S.txTo=b; render(); }
 document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
 $("prevM").onclick=()=>setYM(addM(S.ym,-1)); $("nextM").onclick=()=>setYM(addM(S.ym,1));
-$("txForm").onsubmit=saveTx; $("fBig").onchange=()=>syncSmall(); $("fCancel").onclick=()=>{endEdit();render();}; $("fDel").onclick=delTx;
+$("txForm").onsubmit=saveTx;
+$("fDate").addEventListener("change",()=>{ const p=$("fPocket").value,b=$("fBig").value,s=$("fSmall").value,y=$("fPay").value; const fc=formCfg();
+  fillSelect($("fPocket"),fc.pockets.map(x=>x.name),p); fillSelect($("fBig"),Object.keys(fc.cats),b); syncSmall(s); fillSelect($("fPay"),fc.pays,y); }); $("fBig").onchange=()=>syncSmall(); $("fCancel").onclick=()=>{endEdit();render();}; $("fDel").onclick=delTx;
 ["fAmt","fRef"].forEach(id=>$(id).addEventListener("input",e=>{ const n=parseNum(e.target.value); e.target.value=n==null?"":won(n); }));
 ["flPocket","flBig","flText"].forEach(id=>$(id).addEventListener("input",()=>render()));
 $("flFrom").addEventListener("change",e=>{ if(e.target.value){ S.txFrom=e.target.value; render(); } });
 $("flTo").addEventListener("change",e=>{ if(e.target.value){ S.txTo=e.target.value; render(); } });
 document.querySelectorAll("[data-q]").forEach(b=>b.onclick=()=>quickRange(b.dataset.q));
 document.querySelectorAll("[data-tm]").forEach(b=>b.onclick=()=>{ S.trendMode=b.dataset.tm; saveTrend(); renderTrend(); });
-$("mForm").onsubmit=saveMonth; $("cfgSave").onclick=saveCfg;
+$("mForm").onsubmit=saveMonth; $("cfgSave").onclick=saveCfg; $("newVer").onclick=newVersion; $("delVer").onclick=delVersion;
 $("addFixed").onclick=()=>{ collectCfg(); draft.fixed.push({name:"",small:Object.values(draft.cats).flat()[0]||"",amount:0,day:1}); drawCfg(); };
 $("addPocket").onclick=()=>{ collectCfg(); draft.pockets.push({name:"새 주머니",deduct:false,ratio:0}); drawCfg(); };
 $("addCat").onclick=()=>{ collectCfg(); draft.cats["새 분류"]=["기타"]; drawCfg(); };
