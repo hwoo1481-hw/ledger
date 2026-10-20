@@ -197,6 +197,10 @@ table.cmp td,table.cmp th{white-space:nowrap}
 .verbar .chip small{font-weight:400;color:var(--muted);margin-left:4px}
 .vsel{height:30px;border:1px solid var(--line);border-radius:6px;background:var(--bg);padding:0 6px;font-size:12px}
 .filters select.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink);font-weight:600}
+.bigpick{display:flex;flex-wrap:wrap;gap:4px;min-width:260px}
+.bigpick .mini{display:inline-flex;align-items:center;gap:3px;font-size:12px;border:1px solid var(--line);border-radius:999px;padding:2px 8px;cursor:pointer;white-space:nowrap}
+.bigpick .mini input{width:auto;height:auto;min-width:0;margin:0;padding:0;border:0;background:none}
+.bigpick .mini:has(input:checked){border-color:var(--accent);background:var(--accent-soft);font-weight:600}
 </style>
 </head>
 <body>
@@ -413,7 +417,7 @@ table.cmp td,table.cmp th{white-space:nowrap}
     <div class="panel">
       <div class="phead"><h2>주머니</h2><span class="hint">개인예산 차감 여부 · 와이프 부담비율(정산받을 비율)</span></div>
       <div class="scroll tbl-in"><table id="cPocket"></table></div>
-      <div class="btns writer-only"><button class="btn small" id="addPocket">+ 주머니 추가</button></div>
+      <div class="btns writer-only"><button class="btn small" id="addPocket">+ 주머니 추가</button><button class="btn small" id="autoBigs" title="지금까지 기록에서 주머니별로 쓴 대분류를 체크해 줘요">기록 보고 대분류 자동 체크</button></div>
     </div>
     <div class="panel">
       <div class="phead"><h2>월 고정비</h2><span class="hint">소분류가 같은 지출이 들어오면 '완료'</span></div>
@@ -655,14 +659,17 @@ function renderTrend(){
 /* ---------- 내역 ---------- */
 function fillSelect(sel,items,val,blank){ sel.innerHTML=(blank?`<option value="">${blank}</option>`:"")+items.map(i=>`<option ${i===val?"selected":""}>${esc(i)}</option>`).join(""); if(val&&!items.includes(val)&&!blank) sel.insertAdjacentHTML("beforeend",`<option selected>${esc(val)}</option>`); }
 const formCfg = () => cfgFor(ymOf($("fDate").value||todayStr()));
-function syncSmall(val){ fillSelect($("fSmall"), formCfg().cats[$("fBig").value]||[], val); }
+// 주머니별로 쓸 대분류(설정에서 지정, 비어 있으면 전체)
+function pocketBigs(fc,pocket){ const all=Object.keys(fc.cats), p=fc.pockets.find(x=>x.name===pocket); const l=(p?.bigs||[]).filter(b=>all.includes(b)); return l.length?l:all; }
+function syncBig(val,keep){ const items=pocketBigs(formCfg(),$("fPocket").value); fillSelect($("fBig"),items,keep||items.includes(val)?val:items[0]); }
+function syncSmall(val,keep){ const items=formCfg().cats[$("fBig").value]||[]; fillSelect($("fSmall"),items,keep||items.includes(val)?val:items[0]); }
 let formInit=false;
 function initForm(){
   if(formInit) return;
   if(!$("fDate").value) $("fDate").value=todayStr();
   const fc=formCfg();
   fillSelect($("fPocket"),fc.pockets.map(p=>p.name),$("fPocket").value||"개인");
-  fillSelect($("fBig"),Object.keys(fc.cats),$("fBig").value||"식비"); syncSmall($("fSmall").value);
+  syncBig($("fBig").value||"식비"); syncSmall($("fSmall").value);
   fillSelect($("fPay"),fc.pays,$("fPay").value||fc.pays[0]);
   formInit=true;
 }
@@ -709,7 +716,7 @@ function renderTx(c){
 function startEdit(id){
   const t=S.tx.find(x=>x.id===id); if(!t) return;
   S.editId=id; $("fDate").value=t.date; $("fAmt").value=won(t.amount);
-  const fc=formCfg(); fillSelect($("fPocket"),fc.pockets.map(p=>p.name),t.pocket); fillSelect($("fBig"),Object.keys(fc.cats),t.big); syncSmall(t.small); fillSelect($("fPay"),fc.pays,t.pay);
+  const fc=formCfg(); fillSelect($("fPocket"),fc.pockets.map(p=>p.name),t.pocket); syncBig(t.big,true); syncSmall(t.small,true); fillSelect($("fPay"),fc.pays,t.pay);
   $("fMemo").value=t.memo; $("fRef").value=t.refund?won(t.refund):""; $("fRefDone").checked=t.refundDone;
   $("formTitle").textContent="기록 수정"; $("fSave").textContent="수정 저장"; $("fCancel").hidden=false; $("fDel").hidden=false; $("fDel").textContent="삭제"; $("fDel").dataset.armed="";
   window.scrollTo({top:0,behavior:"smooth"}); render();
@@ -783,7 +790,8 @@ function drawVer(){
 }
 function drawCfg(){
   const ro=canWrite()?"":"disabled"; const smalls=Object.values(draft.cats).flat();
-  $("cPocket").innerHTML=`<tr><th>주머니</th><th class="c">개인예산 차감</th><th>와이프 부담비율(%)</th><th></th></tr>`+draft.pockets.map((p,i)=>`<tr><td><input data-p="${i}" data-k="name" value="${esc(p.name)}" aria-label="주머니 이름" ${ro}></td><td class="c"><input type="checkbox" data-p="${i}" data-k="deduct" ${p.deduct?"checked":""} style="width:auto;height:auto" aria-label="개인예산 차감" ${ro}></td><td><input data-p="${i}" data-k="ratio" inputmode="numeric" value="${Math.round((p.ratio||0)*100)}" aria-label="부담비율" ${ro}></td><td class="writer-only"><button class="btn small danger" data-pdel="${i}">빼기</button></td></tr>`).join("");
+  const bk=Object.keys(draft.cats);
+  $("cPocket").innerHTML=`<tr><th>주머니</th><th class="c">개인예산 차감</th><th>와이프 부담비율(%)</th><th>입력할 때 보일 대분류 <small style="font-weight:400">(아무것도 안 고르면 전체)</small></th><th></th></tr>`+draft.pockets.map((p,i)=>`<tr><td><input data-p="${i}" data-k="name" value="${esc(p.name)}" aria-label="주머니 이름" ${ro}></td><td class="c"><input type="checkbox" data-p="${i}" data-k="deduct" ${p.deduct?"checked":""} style="width:auto;height:auto" aria-label="개인예산 차감" ${ro}></td><td><input data-p="${i}" data-k="ratio" inputmode="numeric" value="${Math.round((p.ratio||0)*100)}" aria-label="부담비율" style="min-width:56px" ${ro}></td><td><div class="bigpick">${bk.map(b=>`<label class="mini"><input type="checkbox" data-pb="${i}" value="${esc(b)}" ${(p.bigs||[]).includes(b)?"checked":""} ${ro}>${esc(b)}</label>`).join("")}</div></td><td class="writer-only"><button class="btn small danger" data-pdel="${i}">빼기</button></td></tr>`).join("");
   $("cFixed").innerHTML=`<tr><th>항목</th><th>소분류(매칭)</th><th>예정액</th><th>납부일</th><th></th></tr>`+draft.fixed.map((f,i)=>`<tr><td><input data-f="${i}" data-k="name" value="${esc(f.name)}" aria-label="항목" ${ro}></td><td><select data-f="${i}" data-k="small" aria-label="소분류" ${ro}>${smalls.map(s=>`<option ${s===f.small?"selected":""}>${esc(s)}</option>`).join("")}</select></td><td><input data-f="${i}" data-k="amount" inputmode="numeric" value="${won(f.amount)}" aria-label="예정액" ${ro}></td><td><input data-f="${i}" data-k="day" inputmode="numeric" value="${f.day||""}" aria-label="납부일" style="min-width:50px" ${ro}></td><td class="writer-only"><button class="btn small danger" data-fdel="${i}">빼기</button></td></tr>`).join("");
   $("cCats").innerHTML=Object.entries(draft.cats).map(([b,s],i)=>`<div class="cfgcat"><input data-cb="${i}" value="${esc(b)}" aria-label="대분류" ${ro}><input data-cs="${i}" value="${esc(s.join(", "))}" aria-label="${esc(b)} 소분류" ${ro}></div>`).join("");
   $("cPays").value=draft.pays.join(", "); $("cPays").readOnly=!canWrite();
@@ -793,7 +801,10 @@ function drawCfg(){
 function collectCfg(){
   document.querySelectorAll("[data-p]").forEach(el=>{ const p=draft.pockets[+el.dataset.p], k=el.dataset.k; p[k]=k==="deduct"?el.checked:k==="ratio"?(parseNum(el.value)||0)/100:el.value.trim(); });
   document.querySelectorAll("[data-f]").forEach(el=>{ const f=draft.fixed[+el.dataset.f], k=el.dataset.k; f[k]=(k==="amount"||k==="day")?(parseNum(el.value)||0):el.value.trim(); });
-  const cats={}; document.querySelectorAll("[data-cb]").forEach(el=>{ const b=el.value.trim(); const s=document.querySelector(`[data-cs="${el.dataset.cb}"]`).value.split(",").map(x=>x.trim()).filter(Boolean); if(b) cats[b]=s; }); draft.cats=cats;
+  const oldKeys=Object.keys(draft.cats), ren={};
+  const cats={}; document.querySelectorAll("[data-cb]").forEach(el=>{ const b=el.value.trim(); const s=document.querySelector(`[data-cs="${el.dataset.cb}"]`).value.split(",").map(x=>x.trim()).filter(Boolean); if(b){ cats[b]=s; ren[oldKeys[+el.dataset.cb]]=b; } }); draft.cats=cats;
+  if(document.querySelector("[data-pb]")){ draft.pockets.forEach(p=>p.bigs=[]);
+    document.querySelectorAll("[data-pb]").forEach(el=>{ const p=draft.pockets[+el.dataset.pb]; const nb=ren[el.value]; if(p&&el.checked&&nb&&cats[nb]&&!p.bigs.includes(nb)) p.bigs.push(nb); }); }
   draft.pays=$("cPays").value.split(",").map(x=>x.trim()).filter(Boolean);
 }
 // 저장 직전 상태를 이력에 남기고 새 설정을 씀 (이력 표가 없으면 이력만 건너뜀)
@@ -854,7 +865,7 @@ function describeChange(o,n){
   const out=[], names=x=>x.map(p=>p.name);
   const op=names(o.pockets), np=names(n.pockets);
   np.filter(x=>!op.includes(x)).forEach(x=>out.push(`주머니 +${x}`)); op.filter(x=>!np.includes(x)).forEach(x=>out.push(`주머니 −${x}`));
-  n.pockets.forEach(p=>{ const q=o.pockets.find(x=>x.name===p.name); if(q&&(q.deduct!==p.deduct||q.ratio!==p.ratio)) out.push(`${p.name} 규칙`); });
+  n.pockets.forEach(p=>{ const q=o.pockets.find(x=>x.name===p.name); if(q&&(q.deduct!==p.deduct||q.ratio!==p.ratio||(q.bigs||[]).join()!==(p.bigs||[]).join())) out.push(`${p.name} 규칙`); });
   const ok=Object.keys(o.cats), nk=Object.keys(n.cats);
   nk.filter(x=>!ok.includes(x)).forEach(x=>out.push(`대분류 +${x}`)); ok.filter(x=>!nk.includes(x)).forEach(x=>out.push(`대분류 −${x}`));
   nk.filter(x=>ok.includes(x)&&o.cats[x].join()!==n.cats[x].join()).forEach(x=>out.push(`${x} 소분류`));
@@ -1047,7 +1058,7 @@ document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>setTab(b.data
 $("prevM").onclick=()=>setYM(addM(S.ym,-1)); $("nextM").onclick=()=>setYM(addM(S.ym,1));
 $("txForm").onsubmit=saveTx;
 $("fDate").addEventListener("change",()=>{ const p=$("fPocket").value,b=$("fBig").value,s=$("fSmall").value,y=$("fPay").value; const fc=formCfg();
-  fillSelect($("fPocket"),fc.pockets.map(x=>x.name),p); fillSelect($("fBig"),Object.keys(fc.cats),b); syncSmall(s); fillSelect($("fPay"),fc.pays,y); }); $("fBig").onchange=()=>syncSmall(); $("fCancel").onclick=()=>{endEdit();render();}; $("fDel").onclick=delTx;
+  fillSelect($("fPocket"),fc.pockets.map(x=>x.name),p); syncBig(b); syncSmall(s); fillSelect($("fPay"),fc.pays,y); }); $("fBig").onchange=()=>syncSmall(); $("fPocket").onchange=()=>{ syncBig($("fBig").value); syncSmall($("fSmall").value); }; $("fCancel").onclick=()=>{endEdit();render();}; $("fDel").onclick=delTx;
 ["fAmt","fRef"].forEach(id=>$(id).addEventListener("input",e=>{ const n=parseNum(e.target.value); e.target.value=n==null?"":won(n); }));
 ["flPocket","flBig","flSmall","flText"].forEach(id=>$(id).addEventListener("input",()=>render()));
 $("flReset").onclick=()=>{ ["flPocket","flBig","flSmall","flText"].forEach(id=>$(id).value=""); render(); };
@@ -1057,6 +1068,7 @@ document.querySelectorAll("[data-q]").forEach(b=>b.onclick=()=>quickRange(b.data
 document.querySelectorAll("[data-tm]").forEach(b=>b.onclick=()=>{ S.trendMode=b.dataset.tm; saveTrend(); renderTrend(); });
 $("mForm").onsubmit=saveMonth; $("cfgSave").onclick=saveCfg; $("newVer").onclick=newVersion; $("cfgReset").onclick=()=>{ renderCfg(); $("cfgMsg").textContent="저장된 상태로 되돌렸어요."; }; $("delVer").onclick=delVersion;
 $("addFixed").onclick=()=>{ collectCfg(); draft.fixed.push({name:"",small:Object.values(draft.cats).flat()[0]||"",amount:0,day:1}); drawCfg(); };
+$("autoBigs").onclick=()=>{ collectCfg(); let n=0; draft.pockets.forEach(p=>{ const used=Object.keys(draft.cats).filter(b=>S.tx.some(t=>t.pocket===p.name&&t.big===b)); if(used.length){ p.bigs=used; n++; } }); drawCfg(); $("cfgMsg").textContent=n?`기록을 보고 ${n}개 주머니의 대분류를 채웠어요. 확인 후 '이 버전 저장'을 누르세요.`:"채울 만한 기록이 아직 없어요."; };
 $("addPocket").onclick=()=>{ collectCfg(); draft.pockets.push({name:"새 주머니",deduct:false,ratio:0}); drawCfg(); };
 $("addCat").onclick=()=>{ collectCfg(); draft.cats["새 분류"]=["기타"]; drawCfg(); };
 ["rFrom","rTo"].forEach(id=>$(id).onchange=()=>renderReport());
