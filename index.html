@@ -196,6 +196,7 @@ table.cmp td,table.cmp th{white-space:nowrap}
 .verbar{display:flex;flex-wrap:wrap;gap:6px}
 .verbar .chip small{font-weight:400;color:var(--muted);margin-left:4px}
 .vsel{height:30px;border:1px solid var(--line);border-radius:6px;background:var(--bg);padding:0 6px;font-size:12px}
+.filters select.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink);font-weight:600}
 </style>
 </head>
 <body>
@@ -323,7 +324,9 @@ table.cmp td,table.cmp th{white-space:nowrap}
       <div class="filters">
         <select id="flPocket" aria-label="주머니 필터"></select>
         <select id="flBig" aria-label="대분류 필터"></select>
+        <select id="flSmall" aria-label="소분류 필터"></select>
         <input id="flText" type="search" placeholder="메모 검색" aria-label="메모 검색">
+        <button type="button" class="btn small" id="flReset" hidden>필터 초기화</button>
       </div>
       <div class="listbox"><table class="ledger" id="tList"></table></div>
       <div class="hint" id="listFoot"></div>
@@ -663,15 +666,30 @@ function initForm(){
   fillSelect($("fPay"),fc.pays,$("fPay").value||fc.pays[0]);
   formInit=true;
 }
+// 목록에 실제로 있는 값만 (건수와 함께) 보여주고, 선택값이 사라지면 '전체'로 되돌림
+function cascadeSelect(sel,rows,key,order,allLabel){
+  const cnt=new Map(); rows.forEach(t=>cnt.set(t[key],(cnt.get(t[key])||0)+1));
+  const names=[...order.filter(n=>cnt.has(n)),...[...cnt.keys()].filter(n=>!order.includes(n)).sort()];
+  const cur=names.includes(sel.value)?sel.value:"";
+  sel.innerHTML=`<option value="">${allLabel} (${rows.length})</option>`+names.map(n=>`<option value="${esc(n)}" ${n===cur?"selected":""}>${esc(n)} (${cnt.get(n)})</option>`).join("");
+  sel.value=cur; sel.classList.toggle("on",!!cur); return cur;
+}
+function allSmallNames(){ const s=[]; [cfgFor(ymOf(todayStr())),...S.versions.slice().reverse()].forEach(v=>Object.values(v.cats).flat().forEach(n=>{ if(!s.includes(n)) s.push(n); })); return s; }
 function renderTx(c){
   initForm();
-  fillSelect($("flPocket"),allPocketNames(),$("flPocket").value,"전체 주머니");
-  fillSelect($("flBig"),allCatNames(),$("flBig").value,"전체 분류");
   if(!S.txFrom) [S.txFrom,S.txTo]=monthRange(S.ym);
   $("flFrom").value=S.txFrom; $("flTo").value=S.txTo;
   let da=S.txFrom, db=S.txTo; if(da>db) [da,db]=[db,da];
-  const fp=$("flPocket").value, fb=$("flBig").value, ft=$("flText").value.trim();
-  const rows=S.tx.filter(t=>t.date>=da&&t.date<=db).filter(t=>(!fp||t.pocket===fp)&&(!fb||t.big===fb)&&(!ft||t.memo.includes(ft)||t.small.includes(ft))).sort((a,b)=>a.date===b.date?String(b.createdAt).localeCompare(String(a.createdAt)):(a.date<b.date?1:-1));
+  // 연동 필터: 기간 → 주머니 → 대분류 → 소분류 순으로, 앞에서 고른 조건에 실제 기록이 있는 항목만 보여줌
+  const inRange=S.tx.filter(t=>t.date>=da&&t.date<=db);
+  const fp=cascadeSelect($("flPocket"),inRange,"pocket",allPocketNames(),"전체 주머니");
+  const s1=fp?inRange.filter(t=>t.pocket===fp):inRange;
+  const fb=cascadeSelect($("flBig"),s1,"big",allCatNames(),"전체 대분류");
+  const s2=fb?s1.filter(t=>t.big===fb):s1;
+  const fs=cascadeSelect($("flSmall"),s2,"small",allSmallNames(),"전체 소분류");
+  const ft=$("flText").value.trim();
+  $("flReset").hidden=!(fp||fb||fs||ft);
+  const rows=(fs?s2.filter(t=>t.small===fs):s2).filter(t=>!ft||t.memo.includes(ft)||t.small.includes(ft)).sort((a,b)=>a.date===b.date?String(b.createdAt).localeCompare(String(a.createdAt)):(a.date<b.date?1:-1));
   const days=Math.round((new Date(db)-new Date(da))/864e5)+1, sum=rows.reduce((x,t)=>x+t.amount,0);
   $("listTitle").textContent=da===db?`${da} 거래내역`:`${da} ~ ${db}`;
   $("listSum").textContent=`${rows.length}건 · ${won(sum)}원`+(days>1?` · 일평균 ${won(sum/days)}원`:"");
@@ -1028,7 +1046,8 @@ $("txForm").onsubmit=saveTx;
 $("fDate").addEventListener("change",()=>{ const p=$("fPocket").value,b=$("fBig").value,s=$("fSmall").value,y=$("fPay").value; const fc=formCfg();
   fillSelect($("fPocket"),fc.pockets.map(x=>x.name),p); fillSelect($("fBig"),Object.keys(fc.cats),b); syncSmall(s); fillSelect($("fPay"),fc.pays,y); }); $("fBig").onchange=()=>syncSmall(); $("fCancel").onclick=()=>{endEdit();render();}; $("fDel").onclick=delTx;
 ["fAmt","fRef"].forEach(id=>$(id).addEventListener("input",e=>{ const n=parseNum(e.target.value); e.target.value=n==null?"":won(n); }));
-["flPocket","flBig","flText"].forEach(id=>$(id).addEventListener("input",()=>render()));
+["flPocket","flBig","flSmall","flText"].forEach(id=>$(id).addEventListener("input",()=>render()));
+$("flReset").onclick=()=>{ ["flPocket","flBig","flSmall","flText"].forEach(id=>$(id).value=""); render(); };
 $("flFrom").addEventListener("change",e=>{ if(e.target.value){ S.txFrom=e.target.value; render(); } });
 $("flTo").addEventListener("change",e=>{ if(e.target.value){ S.txTo=e.target.value; render(); } });
 document.querySelectorAll("[data-q]").forEach(b=>b.onclick=()=>quickRange(b.dataset.q));
