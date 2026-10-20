@@ -682,14 +682,17 @@ function renderTx(c){
   let da=S.txFrom, db=S.txTo; if(da>db) [da,db]=[db,da];
   // 연동 필터: 기간 → 주머니 → 대분류 → 소분류 순으로, 앞에서 고른 조건에 실제 기록이 있는 항목만 보여줌
   const inRange=S.tx.filter(t=>t.date>=da&&t.date<=db);
-  const fp=cascadeSelect($("flPocket"),inRange,"pocket",allPocketNames(),"전체 주머니");
-  const s1=fp?inRange.filter(t=>t.pocket===fp):inRange;
-  const fb=cascadeSelect($("flBig"),s1,"big",allCatNames(),"전체 대분류");
-  const s2=fb?s1.filter(t=>t.big===fb):s1;
-  const fs=cascadeSelect($("flSmall"),s2,"small",allSmallNames(),"전체 소분류");
-  const ft=$("flText").value.trim();
+  // 양방향: 각 칸의 목록은 '나머지 두 칸'의 선택에 맞는 기록에서만 만들어짐
+  //  (주머니를 먼저 고르든 대분류를 먼저 고르든 서로 좁혀짐)
+  const F=[{el:$("flPocket"),key:"pocket",order:allPocketNames(),all:"전체 주머니"},
+           {el:$("flBig"),key:"big",order:allCatNames(),all:"전체 대분류"},
+           {el:$("flSmall"),key:"small",order:allSmallNames(),all:"전체 소분류"}];
+  const val=F.map(f=>f.el.value);
+  const match=(t,skip)=>F.every((f,i)=>i===skip||!val[i]||t[f.key]===val[i]);
+  for(let pass=0;pass<2;pass++) F.forEach((f,i)=>{ val[i]=cascadeSelect(f.el,inRange.filter(t=>match(t,i)),f.key,f.order,f.all); });
+  const [fp,fb,fs]=val, ft=$("flText").value.trim();
   $("flReset").hidden=!(fp||fb||fs||ft);
-  const rows=(fs?s2.filter(t=>t.small===fs):s2).filter(t=>!ft||t.memo.includes(ft)||t.small.includes(ft)).sort((a,b)=>a.date===b.date?String(b.createdAt).localeCompare(String(a.createdAt)):(a.date<b.date?1:-1));
+  const rows=inRange.filter(t=>match(t,-1)).filter(t=>!ft||t.memo.includes(ft)||t.small.includes(ft)).sort((a,b)=>a.date===b.date?String(b.createdAt).localeCompare(String(a.createdAt)):(a.date<b.date?1:-1));
   const days=Math.round((new Date(db)-new Date(da))/864e5)+1, sum=rows.reduce((x,t)=>x+t.amount,0);
   $("listTitle").textContent=da===db?`${da} 거래내역`:`${da} ~ ${db}`;
   $("listSum").textContent=`${rows.length}건 · ${won(sum)}원`+(days>1?` · 일평균 ${won(sum/days)}원`:"");
