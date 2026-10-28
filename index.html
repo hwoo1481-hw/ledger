@@ -201,6 +201,19 @@ table.cmp td,table.cmp th{white-space:nowrap}
 .bigpick .mini{display:inline-flex;align-items:center;gap:3px;font-size:12px;border:1px solid var(--line);border-radius:999px;padding:2px 8px;cursor:pointer;white-space:nowrap}
 .bigpick .mini input{width:auto;height:auto;min-width:0;margin:0;padding:0;border:0;background:none}
 .bigpick .mini:has(input:checked){border-color:var(--accent);background:var(--accent-soft);font-weight:600}
+.btn{white-space:nowrap}
+.bulk{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:10px 12px;border:1px dashed var(--accent);border-radius:8px;background:var(--accent-soft)}
+#catTabs .chip small{font-weight:400;color:var(--faint)}
+/* 메모 자동 추천 */
+.field:has(#fMemo){position:relative}
+.suggest{position:absolute;left:0;right:0;top:100%;margin-top:4px;z-index:6;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);max-height:320px;overflow:auto;padding:4px}
+.sughead{font-size:11px;color:var(--faint);padding:6px 10px 2px}
+.sugitem{display:flex;flex-direction:column;align-items:flex-start;gap:1px;width:100%;border:0;background:transparent;text-align:left;padding:7px 10px;border-radius:7px}
+.sugitem:hover,.sugitem.on{background:var(--accent-soft)}
+.sugitem .m{font-weight:600;font-size:13.5px}
+.sugitem .m mark{background:transparent;color:var(--accent);text-decoration:underline}
+.sugitem .d{font-size:11.5px;color:var(--muted)}
+.field.wide{position:relative}
 </style>
 </head>
 <body>
@@ -245,10 +258,11 @@ table.cmp td,table.cmp th{white-space:nowrap}
   <section class="view" id="v-dash">
     <div class="panel trendpanel">
       <div class="phead"><h2>최근 12개월 추이</h2>
+        <div class="btns"><select id="trendPocket" class="vsel" aria-label="카테고리 볼 주머니" hidden></select>
         <div class="seg" role="group" aria-label="추이 기준">
           <button type="button" data-tm="pocket" aria-pressed="true">주머니별</button>
           <button type="button" data-tm="cat" aria-pressed="false">카테고리별</button>
-        </div>
+        </div></div>
       </div>
       <div class="chips" id="trendChips"></div>
       <div class="trend" id="trend"></div>
@@ -296,13 +310,13 @@ table.cmp td,table.cmp th{white-space:nowrap}
       <div class="phead"><h2 id="formTitle">지출 기록</h2><span class="hint" id="formHint">주머니 → 대분류 → 소분류 순서로 고르세요</span></div>
       <form id="txForm" class="form" autocomplete="off">
         <div class="field"><label for="fDate">날짜</label><input id="fDate" type="date" required></div>
-        <div class="field"><label for="fAmt">금액(원)</label><input id="fAmt" type="text" inputmode="numeric" placeholder="8,000" required></div>
+        <div class="field"><label for="fAmt">금액(원)</label><input id="fAmt" data-money type="text" inputmode="numeric" placeholder="8,000" required></div>
         <div class="field"><label for="fPocket">주머니</label><select id="fPocket"></select></div>
         <div class="field"><label for="fBig">대분류</label><select id="fBig"></select></div>
         <div class="field"><label for="fSmall">소분류</label><select id="fSmall"></select></div>
         <div class="field"><label for="fPay">결제수단</label><select id="fPay"></select></div>
-        <div class="field wide"><label for="fMemo">내역/메모</label><input id="fMemo" type="text" placeholder="가게명, 누구 생일 등"></div>
-        <div class="field"><label for="fRef">환급예정액</label><input id="fRef" type="text" inputmode="numeric" placeholder="없으면 비움"></div>
+        <div class="field wide"><label for="fMemo">내역/메모</label><input id="fMemo" type="text" placeholder="가게명, 누구 생일 등 (예전 내역 자동 추천)" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="memoSug"><div class="suggest" id="memoSug" role="listbox" hidden></div></div>
+        <div class="field"><label for="fRef">환급예정액</label><input id="fRef" data-money type="text" inputmode="numeric" placeholder="없으면 비움"></div>
         <label class="chk"><input id="fRefDone" type="checkbox"> 환급 받음</label>
         <div class="btns" style="grid-column:1/-1">
           <button class="btn primary" type="submit" id="fSave">기록하기</button>
@@ -331,6 +345,15 @@ table.cmp td,table.cmp th{white-space:nowrap}
         <select id="flSmall" aria-label="소분류 필터"></select>
         <input id="flText" type="search" placeholder="메모 검색" aria-label="메모 검색">
         <button type="button" class="btn small" id="flReset" hidden>필터 초기화</button>
+        <button type="button" class="btn small writer-only" id="bulkOpen" hidden>조회된 기록 분류 바꾸기</button>
+      </div>
+      <div class="bulk writer-only" id="bulkBox" hidden>
+        <span class="hint" id="bulkInfo"></span>
+        <select id="bPocket" class="vsel" aria-label="새 주머니"></select>
+        <select id="bBig" class="vsel" aria-label="새 대분류"></select>
+        <select id="bSmall" class="vsel" aria-label="새 소분류"></select>
+        <button type="button" class="btn small primary" id="bApply">바꾸기</button>
+        <button type="button" class="btn small" id="bClose">닫기</button>
       </div>
       <div class="listbox"><table class="ledger" id="tList"></table></div>
       <div class="hint" id="listFoot"></div>
@@ -343,16 +366,16 @@ table.cmp td,table.cmp th{white-space:nowrap}
     <div class="panel">
       <div class="phead"><h2 id="mTitle">월별 입력</h2></div>
       <form id="mForm" class="form" autocomplete="off">
-        <div class="field"><label for="mSalary">월급</label><input id="mSalary" inputmode="numeric"></div>
-        <div class="field"><label for="mAllow">용돈</label><input id="mAllow" inputmode="numeric"></div>
+        <div class="field"><label for="mSalary">월급</label><input id="mSalary" data-money inputmode="numeric"></div>
+        <div class="field"><label for="mAllow">용돈</label><input id="mAllow" data-money inputmode="numeric"></div>
         <div class="field"><label for="mDays">출근일수</label><input id="mDays" inputmode="numeric"></div>
-        <div class="field"><label for="mUnit">식사단가</label><input id="mUnit" inputmode="numeric"></div>
-        <div class="field"><label for="mToWife">와이프에게 보낸 금액</label><input id="mToWife" inputmode="numeric"></div>
-        <div class="field"><label for="mMealIn">식사비 받은 금액</label><input id="mMealIn" inputmode="numeric"></div>
-        <div class="field"><label for="mSettleIn">정산 받은 금액 (공동+와이프관리)</label><input id="mSettleIn" inputmode="numeric"></div>
-        <div class="field"><label for="mOtherIn">기타 입금</label><input id="mOtherIn" inputmode="numeric"></div>
-        <div class="field"><label for="mOpen">월초 잔액 (직접 지정 시)</label><input id="mOpen" inputmode="numeric" placeholder="비우면 전월에서 이월"></div>
-        <div class="field"><label for="mActual">월말 실제 통장잔액</label><input id="mActual" inputmode="numeric" placeholder="확인용"></div>
+        <div class="field"><label for="mUnit">식사단가</label><input id="mUnit" data-money inputmode="numeric"></div>
+        <div class="field"><label for="mToWife">와이프에게 보낸 금액</label><input id="mToWife" data-money inputmode="numeric"></div>
+        <div class="field"><label for="mMealIn">식사비 받은 금액</label><input id="mMealIn" data-money inputmode="numeric"></div>
+        <div class="field"><label for="mSettleIn">정산 받은 금액 (공동+와이프관리)</label><input id="mSettleIn" data-money inputmode="numeric"></div>
+        <div class="field"><label for="mOtherIn">기타 입금</label><input id="mOtherIn" data-money inputmode="numeric"></div>
+        <div class="field"><label for="mOpen">월초 잔액 (직접 지정 시)</label><input id="mOpen" data-money inputmode="numeric" placeholder="비우면 전월에서 이월"></div>
+        <div class="field"><label for="mActual">월말 실제 통장잔액</label><input id="mActual" data-money inputmode="numeric" placeholder="확인용"></div>
         <div class="btns writer-only" style="grid-column:1/-1"><button class="btn primary" type="submit">저장</button></div>
       </form>
     </div>
@@ -417,7 +440,7 @@ table.cmp td,table.cmp th{white-space:nowrap}
     <div class="panel">
       <div class="phead"><h2>주머니</h2><span class="hint">개인예산 차감 여부 · 와이프 부담비율(정산받을 비율)</span></div>
       <div class="scroll tbl-in"><table id="cPocket"></table></div>
-      <div class="btns writer-only"><button class="btn small" id="addPocket">+ 주머니 추가</button><button class="btn small" id="autoBigs" title="지금까지 기록에서 주머니별로 쓴 대분류를 체크해 줘요">기록 보고 대분류 자동 체크</button></div>
+      <div class="btns writer-only"><button class="btn small" id="addPocket">+ 주머니 추가</button></div>
     </div>
     <div class="panel">
       <div class="phead"><h2>월 고정비</h2><span class="hint">소분류가 같은 지출이 들어오면 '완료'</span></div>
@@ -425,9 +448,10 @@ table.cmp td,table.cmp th{white-space:nowrap}
       <div class="btns writer-only"><button class="btn small" id="addFixed">+ 고정비 추가</button></div>
     </div>
     <div class="panel">
-      <div class="phead"><h2>카테고리</h2><span class="hint">소분류는 쉼표로 구분</span></div>
+      <div class="phead"><h2>카테고리</h2><span class="hint">주머니마다 대분류·소분류를 따로 둘 수 있어요 · 소분류를 비우면 대분류 이름이 소분류로 기록돼요</span></div>
+      <div class="chips" id="catTabs"></div>
       <div id="cCats" style="display:flex;flex-direction:column;gap:8px"></div>
-      <div class="btns writer-only"><button class="btn small" id="addCat">+ 대분류 추가</button></div>
+      <div class="btns writer-only"><span id="catActions" class="btns"></span><button class="btn small" id="catRecommend" title="고정비/개인/생활·데이트 주머니에 추천 카테고리를 채워요">추천 카테고리 채우기</button></div>
     </div>
     <div class="panel">
       <div class="phead"><h2>결제수단</h2><span class="hint">쉼표로 구분</span></div>
@@ -464,7 +488,7 @@ const DEFAULT_CFG = {
 };
 const S = { cfg:DEFAULT_CFG, versions:[], editVer:null, tx:[], months:{}, notes:{}, ym:ymOf(todayStr()), tab:"dash", editId:null, role:null,
   trendMode:"pocket", trendSel:{pocket:null,cat:null}, txFrom:null, txTo:null };
-try { const t=localStorage.getItem("lg.tab"); if(t) S.tab=t; const tr=JSON.parse(localStorage.getItem("lg.trend")||"null"); if(tr){ S.trendMode=tr.mode||"pocket"; S.trendSel=tr.sel||S.trendSel; } } catch(e){}
+try { const t=localStorage.getItem("lg.tab"); if(t) S.tab=t; const tr=JSON.parse(localStorage.getItem("lg.trend")||"null"); if(tr){ S.trendMode=tr.mode||"pocket"; S.trendSel=tr.sel||S.trendSel; S.trendPocket=tr.pocket||""; } } catch(e){}
 const fmtD = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 const monthRange = ym => { const [y,m]=ym.split("-").map(Number); return [`${ym}-01`,`${ym}-${pad(new Date(y,m,0).getDate())}`]; };
 const shortWon = n => { const v=Math.abs(n); if(v>=1e8) return (n/1e8).toFixed(1).replace(/\.0$/,"")+"억"; if(v>=1e4) return Math.round(n/1e4).toLocaleString("ko-KR")+"만"; return won(n); };
@@ -476,7 +500,13 @@ const verLabel = f => f<="2000-01"?"처음부터":`${f}부터`;
 function pocketDef(name,ym){ const c=cfgFor(ym).pockets.find(p=>p.name===name); if(c) return c; for(let i=S.versions.length-1;i>=0;i--){ const p=S.versions[i].pockets.find(p=>p.name===name); if(p) return p; } return {name,deduct:false,ratio:0}; }
 function unionNames(listsFn,txKey){ const s=[]; const cur=cfgFor(ymOf(todayStr())); [cur,...S.versions.slice().reverse()].forEach(v=>listsFn(v).forEach(n=>{ if(!s.includes(n)) s.push(n); })); S.tx.forEach(t=>{ if(t[txKey]&&!s.includes(t[txKey])) s.push(t[txKey]); }); return s; }
 const allPocketNames = () => unionNames(v=>v.pockets.map(p=>p.name),"pocket");
-const allCatNames = () => unionNames(v=>Object.keys(v.cats),"big");
+// 주머니별 카테고리: 주머니에 전용 카테고리가 있으면 그것, 없으면 공통(예전 대분류 체크가 있으면 그만큼만)
+function pocketCats(cfg,pocket){ const p=cfg.pockets.find(x=>x.name===pocket); if(p?.cats&&Object.keys(p.cats).length) return p.cats;
+  const all=cfg.cats||{}, l=(p?.bigs||[]).filter(b=>all[b]); return l.length?Object.fromEntries(l.map(b=>[b,all[b]])):all; }
+const smallsOf = (cats,big) => { const s=cats[big]||[]; return s.length?s:[big]; };   // 소분류가 없으면 대분류 이름을 소분류로
+function cfgAllCats(cfg){ const out={}; const add=c=>Object.entries(c||{}).forEach(([b,s])=>{ out[b]=[...new Set([...(out[b]||[]),...(s.length?s:[b])])]; });
+  cfg.pockets.forEach(p=>add(pocketCats(cfg,p.name))); if(!cfg.pockets.length) add(cfg.cats); return out; }
+const allCatNames = () => unionNames(v=>Object.keys(cfgAllCats(v)),"big");
 const pColor = name => `var(--p${(Math.max(0,allPocketNames().indexOf(name))%5)+1})`;
 function toast(msg){ const t=$("toast"); t.textContent=msg; t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true,2600); }
 
@@ -548,12 +578,14 @@ function balance(ym){
 function compute(ym){
   const m=monthDoc(ym), txs=txOf(ym);
   const cfg=cfgFor(ym), pn=cfg.pockets.map(p=>p.name); txs.forEach(t=>{ if(!pn.includes(t.pocket)) pn.push(t.pocket); });
-  const pockets=pn.map((name,i)=>{ const p={...pocketDef(name,ym),name,legacy:!cfg.pockets.some(x=>x.name===name)}; const ts=txs.filter(t=>t.pocket===p.name); const amt=ts.reduce((a,t)=>a+t.amount,0), ref=ts.reduce((a,t)=>a+t.refund,0), net=amt-ref; return {...p,i,amt,ref,net,settle:Math.round(net*(Number(p.ratio)||0)),count:ts.length}; });
+  const pockets=pn.map((name,i)=>{ const p={...pocketDef(name,ym),name,legacy:!cfg.pockets.some(x=>x.name===name)}; const ts=txs.filter(t=>t.pocket===p.name); const amt=ts.reduce((a,t)=>a+t.amount,0), ref=ts.reduce((a,t)=>a+t.refund,0), net=amt-ref; const gross=(p.settleBase||((Number(p.ratio)||0)>=1?"gross":"net"))==="gross"; return {...p,i,amt,ref,net,gross,settle:Math.round((gross?amt:net)*(Number(p.ratio)||0)),count:ts.length}; });
   const tot=k=>pockets.reduce((a,p)=>a+p[k],0);
   const budget=(m.allowance||0)+(m.workdays||0)*(m.mealUnit||0);
   const used=pockets.filter(p=>p.deduct).reduce((a,p)=>a+p.net,0);
-  const fixed=cfg.fixed.map(f=>{ const paid=txs.filter(t=>t.small===f.small).reduce((a,t)=>a+t.amount,0); return {...f,paid,status:paid>0?"완료":(!(Number(f.amount)>0)?"-":"미납")}; });
-  const bn=Object.keys(cfg.cats); txs.forEach(t=>{ if(!bn.includes(t.big)) bn.push(t.big); });
+  const fixed=cfg.fixed.map(f=>{ const paid=txs.filter(t=>t.small===f.small&&(!f.pocket||t.pocket===f.pocket)).reduce((a,t)=>a+t.amount,0), amt=Number(f.amount)||0;
+    const status=paid>0?"완료":(!(amt>0)?"-":(f.cycle==="flex"?"청구 없음":"미납"));
+    return {...f,paid,status,months:amt>0&&paid>=amt*1.6?Math.round(paid/amt):0}; });
+  const bn=Object.keys(cfgAllCats(cfg)); txs.forEach(t=>{ if(!bn.includes(t.big)) bn.push(t.big); });
   const cats=bn.map(b=>({big:b,net:txs.filter(t=>t.big===b).reduce((a,t)=>a+t.amount-t.refund,0)}));
   const payN=[...cfg.pays]; txs.forEach(t=>{ if(t.pay&&!payN.includes(t.pay)) payN.push(t.pay); });
   const pays=payN.map(p=>({pay:p,amt:txs.filter(t=>t.pay===p).reduce((a,t)=>a+t.amount,0),n:txs.filter(t=>t.pay===p).length})).filter(p=>p.n>0);
@@ -587,7 +619,7 @@ function renderDash(c){
   const msgs=[];
   if (!c.m.workdays) msgs.push("출근일수가 없어 식사비 예산이 0원으로 계산돼요.");
   if (c.bal.openSrc==="미입력") msgs.push("첫 달 월초 잔액이 비어 있어요.");
-  const settleBase=c.pockets.filter(p=>p.ratio>0).map(p=>`${p.name} ${won(p.settle)}`).join(" · ");
+  const settleBase=c.pockets.filter(p=>p.ratio>0).map(p=>`${p.name} ${won(p.settle)}${p.gross?"":"(환급 제외)"}`).join(" · ");
   $("kpis").innerHTML =
     kpi(c.remain<0?"개인예산 초과":"남은 개인예산", c.remain, `예산 ${won(c.budget)} · 사용 ${won(c.used)}`, "hero", c.budget?100*Math.max(0,c.remain)/c.budget:0) +
     kpi("고정비 납부", c.fixedPaid, unpaid?`예정 ${won(c.fixedPlan)} · <b style="color:var(--bad)">미납 ${unpaid}건</b>`:`예정 ${won(c.fixedPlan)} · 미납 없음`) +
@@ -604,7 +636,7 @@ function renderDash(c){
     `<tr class="total"><td>합계</td><td class="r num">${won(c.amt)}</td><td class="r num">${won(c.ref)}</td><td class="r num">${won(c.net)}</td><td></td><td class="r num">${won(c.settle)}</td></tr>`;
   $("fixHint").textContent=`예정 합계 ${won(c.fixedPlan)}원`;
   $("tFixed").innerHTML=`<tr><th>항목</th><th class="c">납부일</th><th class="r">예정</th><th class="r">납부</th><th class="c">상태</th></tr>`+
-    c.fixed.map(f=>`<tr><td>${esc(f.name)}</td><td class="c num">${f.day?f.day+"일":"-"}</td><td class="r num">${won(f.amount)}</td><td class="r num">${won(f.paid)}</td><td class="c">${f.status==="완료"?'<span class="pill ok">완료</span>':f.status==="미납"?'<span class="pill no">미납</span>':'<span class="pill mute">-</span>'}</td></tr>`).join("");
+    c.fixed.map(f=>`<tr><td>${esc(f.name)}${f.cycle==="flex"?' <small style="color:var(--faint)">부정기</small>':""}</td><td class="c num">${f.day?f.day+"일":"-"}</td><td class="r num">${won(f.amount)}</td><td class="r num">${won(f.paid)}${f.months>1?`<br><small style="color:var(--faint)">약 ${f.months}개월분</small>`:""}</td><td class="c">${f.status==="완료"?'<span class="pill ok">완료</span>':f.status==="미납"?'<span class="pill no">미납</span>':f.status==="청구 없음"?'<span class="pill mute">청구 없음</span>':'<span class="pill mute">-</span>'}</td></tr>`).join("");
   const cs=[...c.cats].sort((a,b)=>b.net-a.net), mx=Math.max(1,...cs.map(x=>x.net));
   $("catHint").textContent=`합계 ${won(c.net)}원`;
   $("cats").innerHTML=cs.some(x=>x.net)?cs.filter(x=>x.net).map(x=>`<div class="bar"><span>${esc(x.big)}</span><div class="track"><i style="width:${100*x.net/mx}%"></i></div><span class="v num">${won(x.net)}</span></div>`).join(""):`<div class="empty">이 달 지출이 아직 없어요.</div>`;
@@ -624,14 +656,23 @@ function renderDash(c){
 function trendSeries(){
   const months=[...Array(12)].map((_,i)=>addM(S.ym,i-11)), inWin=new Set(months);
   const used=k=>S.tx.some(t=>inWin.has(t.ym)&&(S.trendMode==="cat"?t.big===k:t.pocket===k));
-  if(S.trendMode==="cat"){ const cur=Object.keys(cfgFor(S.ym).cats); return allCatNames().filter(k=>cur.includes(k)||used(k)).map(k=>({key:k,color:catColor(k),get:t=>t.big===k})); }
+  if(S.trendMode==="cat"){ const tp=S.trendPocket||"";
+    const cur=Object.keys(tp?pocketCats(cfgFor(S.ym),tp):cfgAllCats(cfgFor(S.ym)));
+    const usedP=k=>S.tx.some(t=>inWin.has(t.ym)&&t.big===k&&(!tp||t.pocket===tp));
+    const keys=[...cur.filter(k=>!tp||true),...allCatNames().filter(k=>!cur.includes(k)&&usedP(k))].filter(k=>cur.includes(k)||usedP(k));
+    return keys.map(k=>({key:k,color:catColor(k),get:t=>t.big===k&&(!tp||t.pocket===tp)})); }
   const cur=cfgFor(S.ym).pockets.map(p=>p.name);
   return allPocketNames().filter(k=>cur.includes(k)||used(k)).map(k=>({key:k,color:pColor(k),get:t=>t.pocket===k}));
 }
-function saveTrend(){ try{ localStorage.setItem("lg.trend",JSON.stringify({mode:S.trendMode,sel:S.trendSel})); }catch(e){} }
+const trendKey = () => S.trendMode==="cat"?`cat:${S.trendPocket||""}`:"pocket";
+function saveTrend(){ try{ localStorage.setItem("lg.trend",JSON.stringify({mode:S.trendMode,sel:S.trendSel,pocket:S.trendPocket||""})); }catch(e){} }
 function renderTrend(){
   document.querySelectorAll("[data-tm]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.tm===S.trendMode)));
-  const ser=trendSeries(), selArr=S.trendSel[S.trendMode];
+  const tpEl=$("trendPocket"); tpEl.hidden=S.trendMode!=="cat";
+  const tpNames=cfgFor(S.ym).pockets.map(p=>p.name);
+  if(S.trendPocket&&!tpNames.includes(S.trendPocket)&&!S.tx.some(t=>t.pocket===S.trendPocket)) S.trendPocket="";
+  tpEl.innerHTML=`<option value="">전체 주머니</option>`+tpNames.map(n=>`<option ${n===S.trendPocket?"selected":""}>${esc(n)}</option>`).join("");
+  const ser=trendSeries(), selArr=S.trendSel[trendKey()];
   const sel=new Set(selArr?selArr.filter(k=>ser.some(s=>s.key===k)):ser.map(s=>s.key));
   const active=ser.filter(s=>sel.has(s.key));
   $("trendChips").innerHTML=`<button type="button" class="chip ghost" data-chip="__all">전체 선택</button><button type="button" class="chip ghost" data-chip="__none">모두 해제</button>`+
@@ -640,7 +681,7 @@ function renderTrend(){
     const k=b.dataset.chip; let next;
     if(k==="__all") next=null; else if(k==="__none") next=[];
     else { const cur=new Set(sel); cur.has(k)?cur.delete(k):cur.add(k); next=cur.size===ser.length?null:[...cur]; }
-    S.trendSel[S.trendMode]=next; saveTrend(); renderTrend();
+    S.trendSel[trendKey()]=next; saveTrend(); renderTrend();
   });
   const months=[...Array(12)].map((_,i)=>addM(S.ym,i-11));
   const data=months.map(ym=>{ const txs=txOf(ym); const parts=active.map(s=>Math.max(0,txs.filter(s.get).reduce((x,t)=>x+t.amount-t.refund,0))); return {ym,parts,tot:parts.reduce((x,y)=>x+y,0)}; });
@@ -660,9 +701,9 @@ function renderTrend(){
 function fillSelect(sel,items,val,blank){ sel.innerHTML=(blank?`<option value="">${blank}</option>`:"")+items.map(i=>`<option ${i===val?"selected":""}>${esc(i)}</option>`).join(""); if(val&&!items.includes(val)&&!blank) sel.insertAdjacentHTML("beforeend",`<option selected>${esc(val)}</option>`); }
 const formCfg = () => cfgFor(ymOf($("fDate").value||todayStr()));
 // 주머니별로 쓸 대분류(설정에서 지정, 비어 있으면 전체)
-function pocketBigs(fc,pocket){ const all=Object.keys(fc.cats), p=fc.pockets.find(x=>x.name===pocket); const l=(p?.bigs||[]).filter(b=>all.includes(b)); return l.length?l:all; }
+function pocketBigs(fc,pocket){ return Object.keys(pocketCats(fc,pocket)); }
 function syncBig(val,keep){ const items=pocketBigs(formCfg(),$("fPocket").value); fillSelect($("fBig"),items,keep||items.includes(val)?val:items[0]); }
-function syncSmall(val,keep){ const items=formCfg().cats[$("fBig").value]||[]; fillSelect($("fSmall"),items,keep||items.includes(val)?val:items[0]); }
+function syncSmall(val,keep){ const items=smallsOf(pocketCats(formCfg(),$("fPocket").value),$("fBig").value); fillSelect($("fSmall"),items,keep||items.includes(val)?val:items[0]); }
 let formInit=false;
 function initForm(){
   if(formInit) return;
@@ -681,7 +722,7 @@ function cascadeSelect(sel,rows,key,order,allLabel){
   sel.innerHTML=`<option value="">${allLabel} (${rows.length})</option>`+names.map(n=>`<option value="${esc(n)}" ${n===cur?"selected":""}>${esc(n)} (${cnt.get(n)})</option>`).join("");
   sel.value=cur; sel.classList.toggle("on",!!cur); return cur;
 }
-function allSmallNames(){ const s=[]; [cfgFor(ymOf(todayStr())),...S.versions.slice().reverse()].forEach(v=>Object.values(v.cats).flat().forEach(n=>{ if(!s.includes(n)) s.push(n); })); return s; }
+function allSmallNames(){ const s=[]; [cfgFor(ymOf(todayStr())),...S.versions.slice().reverse()].forEach(v=>Object.values(cfgAllCats(v)).flat().forEach(n=>{ if(!s.includes(n)) s.push(n); })); return s; }
 function renderTx(c){
   initForm();
   if(!S.txFrom) [S.txFrom,S.txTo]=monthRange(S.ym);
@@ -699,7 +740,11 @@ function renderTx(c){
   for(let pass=0;pass<2;pass++) F.forEach((f,i)=>{ val[i]=cascadeSelect(f.el,inRange.filter(t=>match(t,i)),f.key,f.order,f.all); });
   const [fp,fb,fs]=val, ft=$("flText").value.trim();
   $("flReset").hidden=!(fp||fb||fs||ft);
+  S.txRowsFilter={fp,fb,fs,ft};
   const rows=inRange.filter(t=>match(t,-1)).filter(t=>!ft||t.memo.includes(ft)||t.small.includes(ft)).sort((a,b)=>a.date===b.date?String(b.createdAt).localeCompare(String(a.createdAt)):(a.date<b.date?1:-1));
+  S.txRows=rows;
+  $("bulkOpen").hidden=!canWrite()||!(fp||fb||fs||ft)||!rows.length; $("bulkOpen").textContent=`조회된 ${rows.length}건 분류 바꾸기`;
+  if(!$("bulkBox").hidden) $("bulkInfo").textContent=`조회된 ${rows.length}건을 →`;
   const days=Math.round((new Date(db)-new Date(da))/864e5)+1, sum=rows.reduce((x,t)=>x+t.amount,0);
   $("listTitle").textContent=da===db?`${da} 거래내역`:`${da} ~ ${db}`;
   $("listSum").textContent=`${rows.length}건 · ${won(sum)}원`+(days>1?` · 일평균 ${won(sum/days)}원`:"");
@@ -742,6 +787,64 @@ async function delTx(){
 }
 async function markRefund(id,done){
   try{ const {error}=await sb.from("tx").update({refund_done:done,updated_at:new Date().toISOString()}).eq("id",id); errMsg(error); toast(done?"환급완료로 표시했어요.":"환급 대기로 되돌렸어요."); await loadTx(); render(); }catch(_){}
+}
+
+/* ---------- 내역 메모 자동 추천 ---------- */
+// 예전에 쓴 메모를 모아, 입력한 글자가 들어간 것을 자주·최근 쓴 순서로 보여줌. 고르면 주머니·분류·결제수단(금액이 비어 있으면 금액도)을 채움
+let sugItems=[], sugIdx=-1;
+function memoIndex(){
+  const m=new Map(), now=Date.now();
+  S.tx.forEach(t=>{ const k=(t.memo||"").trim(); if(!k) return; const age=(now-new Date(t.date))/864e5;
+    const e=m.get(k)||{memo:k,count:0,score:0,last:null}; e.count++; e.score+=age<90?1:0.3;
+    if(!e.last||t.date>e.last.date||(t.date===e.last.date&&String(t.createdAt)>String(e.last.createdAt))) e.last=t; m.set(k,e); });
+  return [...m.values()];
+}
+function showSuggest(){
+  const q=$("fMemo").value.trim().toLowerCase(), all=memoIndex();
+  let list=q?all.filter(e=>e.memo.toLowerCase().includes(q)&&e.memo.toLowerCase()!==q):all;
+  list.sort((x,y)=>q?((y.memo.toLowerCase().startsWith(q)-x.memo.toLowerCase().startsWith(q))||(y.score-x.score)||(y.last.date>x.last.date?1:-1)):((y.score-x.score)||(y.last.date>x.last.date?1:-1)));
+  sugItems=list.slice(0,8); sugIdx=-1;
+  const box=$("memoSug");
+  if(!sugItems.length){ box.hidden=true; $("fMemo").setAttribute("aria-expanded","false"); return; }
+  const hi=s=>{ if(!q) return esc(s); const i=s.toLowerCase().indexOf(q); return i<0?esc(s):esc(s.slice(0,i))+"<mark>"+esc(s.slice(i,i+q.length))+"</mark>"+esc(s.slice(i+q.length)); };
+  box.innerHTML=(q?"":`<div class="sughead">자주 쓴 내역</div>`)+sugItems.map((e,i)=>{ const t=e.last;
+    return `<button type="button" class="sugitem" role="option" id="sug${i}" data-i="${i}"><span class="m">${hi(e.memo)}</span><span class="d">${esc(t.pocket)} › ${esc(t.big)} › ${esc(t.small)} · ${esc(t.pay)} · ${won(t.amount)}원${e.count>1?` · ${e.count}회`:""}</span></button>`; }).join("");
+  box.hidden=false; $("fMemo").setAttribute("aria-expanded","true");
+  box.querySelectorAll("[data-i]").forEach(b=>{ b.onpointerdown=ev=>ev.preventDefault(); b.onclick=()=>pickSuggest(+b.dataset.i); });
+}
+function hideSuggest(){ $("memoSug").hidden=true; $("fMemo").setAttribute("aria-expanded","false"); sugIdx=-1; }
+function pickSuggest(i){
+  const e=sugItems[i]; if(!e) return; const t=e.last, fc=formCfg();
+  $("fMemo").value=e.memo;
+  fillSelect($("fPocket"),fc.pockets.map(p=>p.name),t.pocket); syncBig(t.big,true); syncSmall(t.small,true);
+  fillSelect($("fPay"),fc.pays,t.pay);
+  if(!parseNum($("fAmt").value)) $("fAmt").value=won(t.amount);
+  hideSuggest(); toast(`'${e.memo}' 지난 기록대로 채웠어요. 금액만 확인하세요.`); $("fAmt").focus(); $("fAmt").select();
+}
+function moveSuggest(d){ if($("memoSug").hidden||!sugItems.length) return false; sugIdx=(sugIdx+d+sugItems.length)%sugItems.length;
+  $("memoSug").querySelectorAll(".sugitem").forEach((b,i)=>b.classList.toggle("on",i===sugIdx)); $("fMemo").setAttribute("aria-activedescendant","sug"+sugIdx); return true; }
+
+/* ---------- 조회된 기록 분류 한꺼번에 바꾸기 ---------- */
+function bulkFill(){
+  const fc=cfgFor(ymOf(todayStr())), pv=$("bPocket").value;
+  $("bPocket").innerHTML=`<option value="">주머니 그대로</option>`+fc.pockets.map(p=>`<option ${p.name===pv?"selected":""}>${esc(p.name)}</option>`).join("");
+  const scope=$("bPocket").value||S.txRowsFilter?.fp||"";
+  const cats=scope?pocketCats(fc,scope):cfgAllCats(fc), bigs=Object.keys(cats);
+  const bv=bigs.includes($("bBig").value)?$("bBig").value:bigs[0];
+  $("bBig").innerHTML=bigs.map(x=>`<option ${x===bv?"selected":""}>${esc(x)}</option>`).join("");
+  const sm=smallsOf(cats,bv), sv=sm.includes($("bSmall").value)?$("bSmall").value:sm[0];
+  $("bSmall").innerHTML=sm.map(x=>`<option ${x===sv?"selected":""}>${esc(x)}</option>`).join("");
+  $("bApply").textContent="바꾸기"; $("bApply").dataset.armed="";
+}
+async function bulkApply(){
+  const rows=S.txRows||[]; if(!rows.length) return;
+  const btn=$("bApply"); if(!btn.dataset.armed){ btn.dataset.armed="1"; btn.textContent=`${rows.length}건 정말 바꾸기`; return; }
+  const upd={big:$("bBig").value,small:$("bSmall").value,updated_at:new Date().toISOString()}; if($("bPocket").value) upd.pocket=$("bPocket").value;
+  btn.disabled=true;
+  try{ const ids=rows.map(t=>t.id);
+    for(let i=0;i<ids.length;i+=100){ const {error}=await sb.from("tx").update(upd).in("id",ids.slice(i,i+100)); errMsg(error); }
+    toast(`${ids.length}건의 분류를 바꿨어요.`); $("bulkBox").hidden=true; await loadTx(); render();
+  }catch(_){} finally{ btn.disabled=false; btn.dataset.armed=""; btn.textContent="바꾸기"; }
 }
 
 /* ---------- 월별 ---------- */
@@ -788,24 +891,58 @@ function drawVer(){
   $("newVerFrom").innerHTML=opts.map(o=>`<option ${o===addM(base,1)?"selected":""}>${o}</option>`).join("");
   $("delVer").hidden=S.versions.length<2; $("delVer").textContent="이 버전 삭제"; $("delVer").dataset.armed="";
 }
+function catTarget(){ if(S.catTab===""||S.catTab==null) return draft.cats; const p=draft.pockets[S.catTab]; return p?.cats&&Object.keys(p.cats).length?p.cats:null; }
 function drawCfg(){
-  const ro=canWrite()?"":"disabled"; const smalls=Object.values(draft.cats).flat();
-  const bk=Object.keys(draft.cats);
-  $("cPocket").innerHTML=`<tr><th>주머니</th><th class="c">개인예산 차감</th><th>와이프 부담비율(%)</th><th>입력할 때 보일 대분류 <small style="font-weight:400">(아무것도 안 고르면 전체)</small></th><th></th></tr>`+draft.pockets.map((p,i)=>`<tr><td><input data-p="${i}" data-k="name" value="${esc(p.name)}" aria-label="주머니 이름" ${ro}></td><td class="c"><input type="checkbox" data-p="${i}" data-k="deduct" ${p.deduct?"checked":""} style="width:auto;height:auto" aria-label="개인예산 차감" ${ro}></td><td><input data-p="${i}" data-k="ratio" inputmode="numeric" value="${Math.round((p.ratio||0)*100)}" aria-label="부담비율" style="min-width:56px" ${ro}></td><td><div class="bigpick">${bk.map(b=>`<label class="mini"><input type="checkbox" data-pb="${i}" value="${esc(b)}" ${(p.bigs||[]).includes(b)?"checked":""} ${ro}>${esc(b)}</label>`).join("")}</div></td><td class="writer-only"><button class="btn small danger" data-pdel="${i}">빼기</button></td></tr>`).join("");
-  $("cFixed").innerHTML=`<tr><th>항목</th><th>소분류(매칭)</th><th>예정액</th><th>납부일</th><th></th></tr>`+draft.fixed.map((f,i)=>`<tr><td><input data-f="${i}" data-k="name" value="${esc(f.name)}" aria-label="항목" ${ro}></td><td><select data-f="${i}" data-k="small" aria-label="소분류" ${ro}>${smalls.map(s=>`<option ${s===f.small?"selected":""}>${esc(s)}</option>`).join("")}</select></td><td><input data-f="${i}" data-k="amount" inputmode="numeric" value="${won(f.amount)}" aria-label="예정액" ${ro}></td><td><input data-f="${i}" data-k="day" inputmode="numeric" value="${f.day||""}" aria-label="납부일" style="min-width:50px" ${ro}></td><td class="writer-only"><button class="btn small danger" data-fdel="${i}">빼기</button></td></tr>`).join("");
-  $("cCats").innerHTML=Object.entries(draft.cats).map(([b,s],i)=>`<div class="cfgcat"><input data-cb="${i}" value="${esc(b)}" aria-label="대분류" ${ro}><input data-cs="${i}" value="${esc(s.join(", "))}" aria-label="${esc(b)} 소분류" ${ro}></div>`).join("");
+  const ro=canWrite()?"":"disabled"; const smalls=Object.values(cfgAllCats(draft)).flat().filter((x,i,arr)=>arr.indexOf(x)===i);
+  if(S.catTab!==""&&S.catTab!=null&&!draft.pockets[S.catTab]) S.catTab="";
+  $("cPocket").innerHTML=`<tr><th>주머니</th><th class="c">개인예산 차감</th><th>와이프 부담비율(%)</th><th>정산 기준</th><th>카테고리</th><th></th></tr>`+draft.pockets.map((p,i)=>{
+    const gb=p.settleBase||((Number(p.ratio)||0)>=1?"gross":"net"), own=p.cats&&Object.keys(p.cats).length;
+    return `<tr><td><input data-p="${i}" data-k="name" value="${esc(p.name)}" aria-label="주머니 이름" ${ro}></td><td class="c"><input type="checkbox" data-p="${i}" data-k="deduct" ${p.deduct?"checked":""} style="width:auto;height:auto" aria-label="개인예산 차감" ${ro}></td><td><input data-p="${i}" data-k="ratio" inputmode="numeric" value="${Math.round((p.ratio||0)*100)}" aria-label="부담비율" style="min-width:56px" ${ro}></td>
+    <td><select data-p="${i}" data-k="settleBase" aria-label="정산 기준" ${ro}><option value="gross" ${gb==="gross"?"selected":""}>결제액 전체</option><option value="net" ${gb==="net"?"selected":""}>환급 뺀 실부담</option></select></td>
+    <td style="white-space:nowrap"><button type="button" class="btn small" data-cattab="${i}">${own?`전용 ${Object.keys(p.cats).length}개`:"공통 사용"} ›</button></td>
+    <td class="writer-only"><button class="btn small danger" data-pdel="${i}">빼기</button></td></tr>`; }).join("");
+  $("cFixed").innerHTML=`<tr><th>항목</th><th>소분류(매칭)</th><th>예정액</th><th>납부일</th><th>주기</th><th></th></tr>`+draft.fixed.map((f,i)=>`<tr><td><input data-f="${i}" data-k="name" value="${esc(f.name)}" aria-label="항목" ${ro}></td><td><select data-f="${i}" data-k="small" aria-label="소분류" ${ro}>${[...smalls,...(smalls.includes(f.small)?[]:[f.small])].map(s=>`<option ${s===f.small?"selected":""}>${esc(s)}</option>`).join("")}</select></td><td><input data-f="${i}" data-k="amount" data-money inputmode="numeric" value="${won(f.amount)}" aria-label="예정액" ${ro}></td><td><input data-f="${i}" data-k="day" inputmode="numeric" value="${f.day||""}" aria-label="납부일" style="min-width:50px" ${ro}></td><td><select data-f="${i}" data-k="cycle" aria-label="주기" ${ro}><option value="monthly" ${f.cycle!=="flex"?"selected":""}>매월</option><option value="flex" ${f.cycle==="flex"?"selected":""}>부정기(격월·계절)</option></select></td><td class="writer-only"><button class="btn small danger" data-fdel="${i}">빼기</button></td></tr>`).join("");
+  // 카테고리: 공통 / 주머니별 탭
+  $("catTabs").innerHTML=`<button type="button" class="chip" data-cattab="" aria-pressed="${S.catTab===""||S.catTab==null}">공통(기본)</button>`+draft.pockets.map((p,i)=>`<button type="button" class="chip" data-cattab="${i}" aria-pressed="${S.catTab===i}">${esc(p.name)}${p.cats&&Object.keys(p.cats).length?"":' <small>· 공통</small>'}</button>`).join("");
+  const tgt=catTarget(), isCommon=S.catTab===""||S.catTab==null;
+  if(tgt){
+    $("cCats").innerHTML=Object.entries(tgt).map(([b,s],i)=>`<div class="cfgcat"><input data-cb="${i}" value="${esc(b)}" aria-label="대분류" ${ro}><input data-cs="${i}" value="${esc(s.join(", "))}" placeholder="비우면 '${esc(b)}' 하나로 기록" aria-label="${esc(b)} 소분류" ${ro}></div>`).join("");
+    $("catActions").innerHTML=`<button class="btn small" id="addCat">+ 대분류 추가</button>${isCommon?"":`<button class="btn small" id="catToCommon">공통 카테고리 쓰기로 되돌리기</button>`}`;
+  } else {
+    const p=draft.pockets[S.catTab];
+    $("cCats").innerHTML=`<p class="hint" style="margin:0">'${esc(p.name)}' 주머니는 지금 공통 카테고리를 써요${p.bigs?.length?` (대분류 ${p.bigs.length}개만)`:""}. 이 주머니에만 맞는 대분류·소분류를 쓰려면 전용 카테고리를 만드세요.</p>`;
+    $("catActions").innerHTML=`<button class="btn small primary" id="catMakeOwn">'${esc(p.name)}' 전용 카테고리 만들기 (현재 목록에서 복사)</button>`;
+  }
+  document.querySelectorAll("[data-cattab]").forEach(b=>b.onclick=()=>{ collectCfg(); S.catTab=b.dataset.cattab===""?"":+b.dataset.cattab; drawCfg(); $("cCats").scrollIntoView({block:"nearest"}); });
+  const ac=$("addCat"); if(ac) ac.onclick=()=>{ collectCfg(); const t=catTarget(); let nm="새 분류",k=2; while(t[nm]) nm=`새 분류${k++}`; t[nm]=[]; drawCfg(); };
+  const tc=$("catToCommon"); if(tc) tc.onclick=()=>{ collectCfg(); delete draft.pockets[S.catTab].cats; drawCfg(); };
+  const mo=$("catMakeOwn"); if(mo) mo.onclick=()=>{ collectCfg(); const p=draft.pockets[S.catTab]; p.cats=JSON.parse(JSON.stringify(pocketCats(draft,p.name))); delete p.bigs; drawCfg(); };
   $("cPays").value=draft.pays.join(", "); $("cPays").readOnly=!canWrite();
   $("cFixed").querySelectorAll("[data-fdel]").forEach(b=>b.onclick=()=>{ collectCfg(); draft.fixed.splice(+b.dataset.fdel,1); drawCfg(); });
-  $("cPocket").querySelectorAll("[data-pdel]").forEach(b=>b.onclick=()=>{ collectCfg(); draft.pockets.splice(+b.dataset.pdel,1); drawCfg(); });
+  $("cPocket").querySelectorAll("[data-pdel]").forEach(b=>b.onclick=()=>{ collectCfg(); draft.pockets.splice(+b.dataset.pdel,1); S.catTab=""; drawCfg(); });
 }
 function collectCfg(){
   document.querySelectorAll("[data-p]").forEach(el=>{ const p=draft.pockets[+el.dataset.p], k=el.dataset.k; p[k]=k==="deduct"?el.checked:k==="ratio"?(parseNum(el.value)||0)/100:el.value.trim(); });
   document.querySelectorAll("[data-f]").forEach(el=>{ const f=draft.fixed[+el.dataset.f], k=el.dataset.k; f[k]=(k==="amount"||k==="day")?(parseNum(el.value)||0):el.value.trim(); });
-  const oldKeys=Object.keys(draft.cats), ren={};
-  const cats={}; document.querySelectorAll("[data-cb]").forEach(el=>{ const b=el.value.trim(); const s=document.querySelector(`[data-cs="${el.dataset.cb}"]`).value.split(",").map(x=>x.trim()).filter(Boolean); if(b){ cats[b]=s; ren[oldKeys[+el.dataset.cb]]=b; } }); draft.cats=cats;
-  if(document.querySelector("[data-pb]")){ draft.pockets.forEach(p=>p.bigs=[]);
-    document.querySelectorAll("[data-pb]").forEach(el=>{ const p=draft.pockets[+el.dataset.pb]; const nb=ren[el.value]; if(p&&el.checked&&nb&&cats[nb]&&!p.bigs.includes(nb)) p.bigs.push(nb); }); }
+  const tgt=catTarget();
+  if(tgt&&document.querySelector("[data-cb]")){
+    const cats={}; document.querySelectorAll("[data-cb]").forEach(el=>{ const b=el.value.trim(); const s=document.querySelector(`[data-cs="${el.dataset.cb}"]`).value.split(",").map(x=>x.trim()).filter(Boolean); if(b) cats[b]=s; });
+    if(S.catTab===""||S.catTab==null) draft.cats=cats; else draft.pockets[S.catTab].cats=cats;
+  }
   draft.pays=$("cPays").value.split(",").map(x=>x.trim()).filter(Boolean);
+}
+// 추천 카테고리 (주머니 이름이 같을 때만 채움)
+const RECOMMEND={
+  "고정비":{"주거":["월세","대출이자","관리비"],"공과금":["가스비","전기·수도"],"통신":[],"보험":[],"적금":[],"세금":[],"교통":["교통비"]},
+  "개인":{"고정지출":["구독료","정기복용약","멤버십"],"식비":["회사점심","회사저녁","간편식"],"카페간식":["카페","간식"],"교통":["주유","주차","택시"],"경조사":["선물","경조사비"],"쇼핑":["의류","전자기기","미용"],"건강":["병원","약"],"여가":["게임","놀이","영화·공연"],"자기계발":["자격증·교육","도서"],"기타":["로또","기타"]},
+  "생활·데이트":{"장보기":["식재료","생활용품"],"외식":["식사","배달","술"],"카페간식":["카페","간식"],"데이트":["영화·공연","놀이","여행","사진"],"교통":["주유","주차"],"경조사":["명절·행사","기념일","선물"],"기타":[]}
+};
+function applyRecommend(){
+  collectCfg(); let n=0;
+  draft.pockets.forEach(p=>{ if(RECOMMEND[p.name]){ p.cats=JSON.parse(JSON.stringify(RECOMMEND[p.name])); delete p.bigs; n++; } });
+  const map=[[/월세/,"월세"],[/대출/,"대출이자"],[/보험/,"보험"],[/통신/,"통신"],[/가스/,"가스비"],[/교통/,"교통비"],[/적금/,"적금"],[/세금/,"세금"]];
+  draft.fixed.forEach(f=>{ const m=map.find(([re])=>re.test(f.name)); if(m){ f.small=m[1]; if(draft.pockets.some(p=>p.name==="고정비")) f.pocket="고정비"; } if(/가스/.test(f.name)) f.cycle="flex"; });
+  drawCfg(); $("cfgMsg").textContent=n?`${n}개 주머니에 추천 카테고리를 채웠어요. 고정비 매칭도 맞췄어요. 확인 후 '이 버전 저장'을 누르세요.`:"이름이 맞는 주머니(고정비/개인/생활·데이트)가 없어요.";
 }
 // 저장 직전 상태를 이력에 남기고 새 설정을 씀 (이력 표가 없으면 이력만 건너뜀)
 async function writeVersions(vers,note,renames=[]){
@@ -830,7 +967,7 @@ async function restoreHist(id,btn){
     const {data:row,error}=await sb.from("config_history").select("data").eq("id",id).single(); errMsg(error);
     // 이 변경과 그 이후 변경에서 바뀐 기록 이름을 최신 것부터 거꾸로 되돌림
     const undo=S.hist.filter(h=>h.id>=id).flatMap(h=>[...(h.renames||[])].reverse());
-    for(const x of undo){ let q=sb.from("tx").update({[x.col]:x.from,updated_at:new Date().toISOString()}).eq(x.col,x.to); if(x.gte) q=q.gte("ym",x.gte); if(x.lt) q=q.lt("ym",x.lt); const r=await q; errMsg(r.error); }
+    for(const x of undo){ let q=sb.from("tx").update({[x.col]:x.from,updated_at:new Date().toISOString()}).eq(x.col,x.to); if(x.pocket) q=q.eq("pocket",x.pocket); if(x.gte) q=q.gte("ym",x.gte); if(x.lt) q=q.lt("ym",x.lt); const r=await q; errMsg(r.error); }
     const target=S.hist.find(h=>h.id===id);
     await writeVersions(row.data.versions||[],`되돌리기: ${target?.created_at.slice(0,16).replace("T"," ")} "${target?.note||""}" 이전 상태로`);
     if(undo.length) await loadTx();
@@ -844,7 +981,9 @@ async function saveCfg(){
   // 같은 줄의 이름이 바뀐 주머니/대분류 찾기
   const ren=[];
   draft.pockets.forEach((p,i)=>{ const o=orig.pockets[i]; if(o&&o.name!==p.name&&p.name) ren.push({col:"pocket",from:o.name,to:p.name}); });
-  const ok=Object.keys(orig.cats), nk=Object.keys(draft.cats); nk.forEach((k,i)=>{ if(ok[i]&&ok[i]!==k&&!ok.includes(k)) ren.push({col:"big",from:ok[i],to:k}); });
+  const ok=Object.keys(orig.cats||{}), nk=Object.keys(draft.cats||{}); nk.forEach((k,i)=>{ if(ok[i]&&ok[i]!==k&&!ok.includes(k)) ren.push({col:"big",from:ok[i],to:k}); });
+  draft.pockets.forEach((p,i)=>{ const o=orig.pockets[i]; if(!o?.cats||!p.cats) return; const a1=Object.keys(o.cats), b1=Object.keys(p.cats);
+    b1.forEach((k,j)=>{ if(a1[j]&&a1[j]!==k&&!a1.includes(k)) ren.push({col:"big",from:a1[j],to:k,pocket:o.name===p.name?p.name:o.name}); }); });
   try{
     const vers=S.versions.map((v,i)=>i===idx?{...draft,from:orig.from}:v);
     const doRen=ren.length&&$("renameTx").checked;
@@ -853,7 +992,7 @@ async function saveCfg(){
     await writeVersions(vers,`${verLabel(orig.from)} 설정 수정${what?" — "+what:""}`,renRec);
     let moved=0;
     if(doRen){
-      for(const x of renRec){ let q=sb.from("tx").update({[x.col]:x.to,updated_at:new Date().toISOString()}).eq(x.col,x.from); if(x.gte) q=q.gte("ym",x.gte); if(x.lt) q=q.lt("ym",x.lt); const {error}=await q; errMsg(error); moved++; }
+      for(const x of renRec){ let q=sb.from("tx").update({[x.col]:x.to,updated_at:new Date().toISOString()}).eq(x.col,x.from); if(x.pocket) q=q.eq("pocket",x.pocket); if(x.gte) q=q.gte("ym",x.gte); if(x.lt) q=q.lt("ym",x.lt); const {error}=await q; errMsg(error); moved++; }
       await loadTx();
     }
     loadHistory();
@@ -865,8 +1004,8 @@ function describeChange(o,n){
   const out=[], names=x=>x.map(p=>p.name);
   const op=names(o.pockets), np=names(n.pockets);
   np.filter(x=>!op.includes(x)).forEach(x=>out.push(`주머니 +${x}`)); op.filter(x=>!np.includes(x)).forEach(x=>out.push(`주머니 −${x}`));
-  n.pockets.forEach(p=>{ const q=o.pockets.find(x=>x.name===p.name); if(q&&(q.deduct!==p.deduct||q.ratio!==p.ratio||(q.bigs||[]).join()!==(p.bigs||[]).join())) out.push(`${p.name} 규칙`); });
-  const ok=Object.keys(o.cats), nk=Object.keys(n.cats);
+  n.pockets.forEach(p=>{ const q=o.pockets.find(x=>x.name===p.name); if(q&&(q.deduct!==p.deduct||q.ratio!==p.ratio||q.settleBase!==p.settleBase)) out.push(`${p.name} 규칙`); if(q&&JSON.stringify(q.cats||null)!==JSON.stringify(p.cats||null)) out.push(`${p.name} 카테고리`); });
+  const ok=Object.keys(o.cats||{}), nk=Object.keys(n.cats||{});
   nk.filter(x=>!ok.includes(x)).forEach(x=>out.push(`대분류 +${x}`)); ok.filter(x=>!nk.includes(x)).forEach(x=>out.push(`대분류 −${x}`));
   nk.filter(x=>ok.includes(x)&&o.cats[x].join()!==n.cats[x].join()).forEach(x=>out.push(`${x} 소분류`));
   if(JSON.stringify(o.fixed)!==JSON.stringify(n.fixed)) out.push("고정비");
@@ -1059,18 +1198,41 @@ $("prevM").onclick=()=>setYM(addM(S.ym,-1)); $("nextM").onclick=()=>setYM(addM(S
 $("txForm").onsubmit=saveTx;
 $("fDate").addEventListener("change",()=>{ const p=$("fPocket").value,b=$("fBig").value,s=$("fSmall").value,y=$("fPay").value; const fc=formCfg();
   fillSelect($("fPocket"),fc.pockets.map(x=>x.name),p); syncBig(b); syncSmall(s); fillSelect($("fPay"),fc.pays,y); }); $("fBig").onchange=()=>syncSmall(); $("fPocket").onchange=()=>{ syncBig($("fBig").value); syncSmall($("fSmall").value); }; $("fCancel").onclick=()=>{endEdit();render();}; $("fDel").onclick=delTx;
-["fAmt","fRef"].forEach(id=>$(id).addEventListener("input",e=>{ const n=parseNum(e.target.value); e.target.value=n==null?"":won(n); }));
+// 금액 칸: 입력하는 동안 천 단위 콤마 자동 표시 (커서 위치 유지)
+function moneyFormat(el){
+  const v=el.value, pos=el.selectionStart??v.length, before=v.slice(0,pos).replace(/[^0-9]/g,"").length;
+  const neg=/^\s*-/.test(v), d=v.replace(/[^0-9]/g,"").replace(/^0+(?=\d)/,"");
+  const out=d?(neg?"-":"")+Number(d).toLocaleString("ko-KR"):(neg?"-":"");
+  if(out===v) return; el.value=out;
+  let i=0,c=0; while(i<out.length&&c<before){ if(/\d/.test(out[i])) c++; i++; }
+  try{ el.setSelectionRange(i,i); }catch(e){}
+}
+document.addEventListener("input",e=>{ const el=e.target; if(el.matches&&el.matches("input[data-money]")) moneyFormat(el); });
 ["flPocket","flBig","flSmall","flText"].forEach(id=>$(id).addEventListener("input",()=>render()));
+$("fMemo").addEventListener("input",showSuggest);
+$("fMemo").addEventListener("focus",showSuggest);
+$("fMemo").addEventListener("blur",()=>setTimeout(hideSuggest,120));
+$("fMemo").addEventListener("keydown",e=>{
+  if(e.key==="ArrowDown"){ if(moveSuggest(1)) e.preventDefault(); }
+  else if(e.key==="ArrowUp"){ if(moveSuggest(-1)) e.preventDefault(); }
+  else if(e.key==="Enter"&&!$("memoSug").hidden&&sugIdx>=0){ e.preventDefault(); pickSuggest(sugIdx); }
+  else if(e.key==="Escape") hideSuggest();
+});
+$("bulkOpen").onclick=()=>{ $("bulkBox").hidden=false; bulkFill(); $("bulkInfo").textContent=`조회된 ${(S.txRows||[]).length}건을 →`; };
+$("bClose").onclick=()=>{ $("bulkBox").hidden=true; };
+["bPocket","bBig"].forEach(id=>$(id).addEventListener("change",bulkFill)); $("bSmall").addEventListener("change",()=>{ $("bApply").dataset.armed=""; $("bApply").textContent="바꾸기"; });
+$("bApply").onclick=bulkApply;
 $("flReset").onclick=()=>{ ["flPocket","flBig","flSmall","flText"].forEach(id=>$(id).value=""); render(); };
 $("flFrom").addEventListener("change",e=>{ if(e.target.value){ S.txFrom=e.target.value; render(); } });
 $("flTo").addEventListener("change",e=>{ if(e.target.value){ S.txTo=e.target.value; render(); } });
 document.querySelectorAll("[data-q]").forEach(b=>b.onclick=()=>quickRange(b.dataset.q));
 document.querySelectorAll("[data-tm]").forEach(b=>b.onclick=()=>{ S.trendMode=b.dataset.tm; saveTrend(); renderTrend(); });
+$("trendPocket").onchange=e=>{ S.trendPocket=e.target.value; saveTrend(); renderTrend(); };
 $("mForm").onsubmit=saveMonth; $("cfgSave").onclick=saveCfg; $("newVer").onclick=newVersion; $("cfgReset").onclick=()=>{ renderCfg(); $("cfgMsg").textContent="저장된 상태로 되돌렸어요."; }; $("delVer").onclick=delVersion;
-$("addFixed").onclick=()=>{ collectCfg(); draft.fixed.push({name:"",small:Object.values(draft.cats).flat()[0]||"",amount:0,day:1}); drawCfg(); };
-$("autoBigs").onclick=()=>{ collectCfg(); let n=0; draft.pockets.forEach(p=>{ const used=Object.keys(draft.cats).filter(b=>S.tx.some(t=>t.pocket===p.name&&t.big===b)); if(used.length){ p.bigs=used; n++; } }); drawCfg(); $("cfgMsg").textContent=n?`기록을 보고 ${n}개 주머니의 대분류를 채웠어요. 확인 후 '이 버전 저장'을 누르세요.`:"채울 만한 기록이 아직 없어요."; };
+$("addFixed").onclick=()=>{ collectCfg(); draft.fixed.push({name:"",small:Object.values(cfgAllCats(draft)).flat()[0]||"",amount:0,day:1,cycle:"monthly"}); drawCfg(); };
+$("catRecommend").onclick=applyRecommend;
 $("addPocket").onclick=()=>{ collectCfg(); draft.pockets.push({name:"새 주머니",deduct:false,ratio:0}); drawCfg(); };
-$("addCat").onclick=()=>{ collectCfg(); draft.cats["새 분류"]=["기타"]; drawCfg(); };
+
 ["rFrom","rTo"].forEach(id=>$(id).onchange=()=>renderReport());
 $("aiBtn").onclick=makeAI; $("dlXlsx").onclick=dlXlsx; $("dlCsv").onclick=dlCsv; $("dlHtml").onclick=dlHtml; $("prHtml").onclick=printHtml;
 })();
