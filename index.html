@@ -323,8 +323,7 @@ tr.cur td{background:var(--accent-soft)}
         <div class="field"><label for="fSmall">소분류</label><select id="fSmall"></select></div>
         <div class="field"><label for="fPay">결제수단</label><select id="fPay"></select></div>
         <div class="field wide"><label for="fMemo">내역/메모</label><input id="fMemo" type="text" placeholder="가게명, 누구 생일 등 (예전 내역 자동 추천)" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="memoSug"><div class="suggest" id="memoSug" role="listbox" hidden></div></div>
-        <div class="field"><label for="fRefKind">돌려받는 돈 종류</label><select id="fRefKind"><option value="">없음</option><option value="refund">복지·교통 환급</option><option value="dutch">더치페이 (나눠 냄)</option></select></div>
-        <div class="field" id="fDutchWrap" hidden><label for="fDutchN">몇 명이 나눴나 (나 포함)</label><input id="fDutchN" type="number" min="2" max="50" inputmode="numeric" placeholder="예: 4"></div>
+        <div class="field"><label for="fRefKind">돌려받는 돈 종류</label><select id="fRefKind"><option value="">없음</option><optgroup label="환급"><option value="welfare">복지카드</option><option value="transit">교통카드</option><option value="wife">생활비환급 (와이프)</option></optgroup><optgroup label="나눠 냄"><option value="dutch">더치페이</option></optgroup></select></div>
         <div class="field" id="fRefWrap" hidden><label for="fRef" id="fRefLabel">돌려받을 금액</label><input id="fRef" data-money type="text" inputmode="numeric" placeholder="0"></div>
         <label class="chk" id="fRefDoneWrap" hidden><input id="fRefDone" type="checkbox"> <span id="fRefDoneLabel">환급 받음</span></label>
         <div class="field" id="fRefOnWrap" hidden><label for="fRefOn">환급 받은 날</label><input id="fRefOn" type="date"></div>
@@ -559,11 +558,14 @@ if (!C.SUPABASE_ANON_KEY || /여기에/.test(C.SUPABASE_ANON_KEY)) {
 }
 const sb = supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY);
 
-const TX_IN = r => ({id:r.id,date:r.date,ym:r.ym,pocket:r.pocket,big:r.big,small:r.small,memo:r.memo||"",pay:r.pay||"",amount:Number(r.amount)||0,refund:Number(r.refund)||0,refundDone:!!r.refund_done,refundOn:r.refund_on||null,refundKind:r.refund_kind||(Number(r.refund)>0?"refund":""),createdAt:r.created_at});
+const TX_IN = r => ({id:r.id,date:r.date,ym:r.ym,pocket:r.pocket,big:r.big,small:r.small,memo:r.memo||"",pay:r.pay||"",amount:Number(r.amount)||0,refund:Number(r.refund)||0,refundDone:!!r.refund_done,refundOn:r.refund_on||null,refundKind:r.refund_kind||(Number(r.refund)>0?"welfare":""),createdAt:r.created_at});
 const TX_OUT = t => { const o={date:t.date,ym:t.ym,pocket:t.pocket,big:t.big,small:t.small,memo:t.memo,pay:t.pay,amount:t.amount,refund:t.refund,refund_done:t.refundDone,updated_at:new Date().toISOString()};
   if(S.hasRefundOn) o.refund_on=t.refundDone?(t.refundOn||todayStr()):null;
-  if(S.hasRefundKind) o.refund_kind=t.refund>0?(t.refundKind||"refund"):null; return o; };
+  if(S.hasRefundKind) o.refund_kind=t.refund>0?(t.refundKind||"welfare"):null; return o; };
 const isDutch = t => t.refundKind==="dutch";
+const isWifeRef = t => t.refundKind==="wife";
+const REF_LABEL={welfare:"복지카드",transit:"교통카드",wife:"생활비환급",dutch:"더치",refund:"환급"};
+const refTag = t => t.refund>0?`<span class="pill mute">${REF_LABEL[t.refundKind]||"환급"}</span> `:"";
 // 환급이 '실제로 들어온 달' (받은 날 기록이 없으면 쓴 달로 간주)
 const refundYM = t => ymOf(t.refundOn||t.date);
 const MCOL = {salary:"salary",allowance:"allowance",workdays:"workdays",mealUnit:"meal_unit",toWife:"to_wife",mealIn:"meal_in",settleIn:"settle_in",otherIn:"other_in",openBal:"open_bal",actualBal:"actual_bal"};
@@ -624,8 +626,8 @@ function balance(ym){
 function compute(ym){
   const m=monthDoc(ym), txs=txOf(ym);
   const cfg=cfgFor(ym), pn=cfg.pockets.map(p=>p.name); txs.forEach(t=>{ if(!pn.includes(t.pocket)) pn.push(t.pocket); });
-  const pockets=pn.map((name,i)=>{ const p={...pocketDef(name,ym),name,legacy:!cfg.pockets.some(x=>x.name===name)}; const ts=txs.filter(t=>t.pocket===p.name); const amt=ts.reduce((a,t)=>a+t.amount,0), ref=ts.reduce((a,t)=>a+t.refund,0), net=amt-ref, dref=ts.filter(isDutch).reduce((a,t)=>a+t.refund,0); const gross=(p.settleBase||((Number(p.ratio)||0)>=1?"gross":"net"))==="gross";
-    // 결제액 전체 기준이어도 더치페이로 친구에게 받을 몫은 빼고 정산 (와이프·친구에게 이중으로 받지 않게)
+  const pockets=pn.map((name,i)=>{ const p={...pocketDef(name,ym),name,legacy:!cfg.pockets.some(x=>x.name===name)}; const ts=txs.filter(t=>t.pocket===p.name); const amt=ts.reduce((a,t)=>a+t.amount,0), ref=ts.reduce((a,t)=>a+t.refund,0), net=amt-ref, dref=ts.filter(t=>isDutch(t)||isWifeRef(t)).reduce((a,t)=>a+t.refund,0); const gross=(p.settleBase||((Number(p.ratio)||0)>=1?"gross":"net"))==="gross";
+    // 결제액 전체 기준이어도 더치페이(친구 몫)·생활비환급(와이프에게 건별로 받는 돈)은 빼고 정산 (이중 계산 방지)
     return {...p,i,amt,ref,net,gross,settle:Math.round((gross?amt-dref:net)*(Number(p.ratio)||0)),count:ts.length}; });
   const tot=k=>pockets.reduce((a,p)=>a+p[k],0);
   const budget=(m.allowance||0)+(m.workdays||0)*(m.mealUnit||0);
@@ -674,7 +676,7 @@ function renderDash(c){
     kpi(c.remain<0?"개인예산 초과":"남은 개인예산", c.remain, `예산 ${won(c.budget)} · 사용 ${won(c.used)}`, "hero", c.budget?100*Math.max(0,c.remain)/c.budget:0) +
     kpi("고정비 납부", c.fixedPaid, unpaid?`예정 ${won(c.fixedPlan)} · <b style="color:var(--bad)">미납 ${unpaid}건</b>`:`예정 ${won(c.fixedPlan)} · 미납 없음`) +
     kpi("와이프에게 받을 금액", c.settleLeft, `${settleBase||"-"} · 받은 ${won(c.m.settleIn||0)}`) +
-    kpi("돌려받을 돈 (대기)", pendSum, (()=>{ const d=pend.filter(isDutch).reduce((x,t)=>x+t.refund,0); return `복지·교통 ${won(pendSum-d)} · 더치페이 ${won(d)} · ${pend.length}건`; })()) +
+    kpi("돌려받을 돈 (대기)", pendSum, (()=>{ const s=f=>pend.filter(f).reduce((x,t)=>x+t.refund,0), d=s(isDutch), w=s(isWifeRef); return `복지·교통 ${won(pendSum-d-w)} · 와이프 ${won(w)} · 더치 ${won(d)}`; })()) +
     (c.m.salary==null
       ? kpi("이번 달 남은 돈", 0, `월급을 입력하면 계산돼요 · 순지출 ${won(c.myNet)}`)
       : kpi("이번 달 남은 돈", c.myLeft, `내 수입 ${won(c.myIncome)} − 순지출 ${won(c.myNet)}${c.pendRef?` · 아직 안 들어온 환급 ${won(c.pendRef)} 포함`:""}`, "", c.myIncome>0?100*Math.max(0,c.myLeft)/c.myIncome:0));
@@ -699,7 +701,7 @@ function renderDash(c){
   renderTrend();
   $("tPay").innerHTML=c.pays.length?`<tr><th>결제수단</th><th class="r">금액</th><th class="r">건수</th></tr>`+c.pays.sort((a,b)=>b.amt-a.amt).map(p=>`<tr><td>${esc(p.pay)}</td><td class="r num">${won(p.amt)}</td><td class="r num">${p.n}</td></tr>`).join(""):`<tr><td colspan="3" class="empty">이 달 기록이 없어요.</td></tr>`;
   const pl=[...pend].sort((a,b)=>a.date<b.date?-1:1);
-  $("tRefund").innerHTML=pl.length?`<tr><th>날짜</th><th>내역</th><th class="r">환급예정</th><th class="c writer-only"></th></tr>`+pl.map(t=>`<tr><td class="num" style="white-space:nowrap">${t.date.slice(2)}<br><small style="color:var(--faint)">${Math.max(0,Math.round((new Date(todayStr())-new Date(t.date))/864e5))}일째</small></td><td>${isDutch(t)?'<span class="pill wait">더치</span> ':""}${esc(t.memo||t.small)}<br><small style="color:var(--faint)">${esc(t.pay)}</small></td><td class="r num">${won(t.refund)}</td><td class="c writer-only"><button class="btn small" data-ref="${t.id}">받음</button></td></tr>`).join(""):`<tr><td colspan="4" class="empty">받을 환급이 없어요.</td></tr>`;
+  $("tRefund").innerHTML=pl.length?`<tr><th>날짜</th><th>내역</th><th class="r">환급예정</th><th class="c writer-only"></th></tr>`+pl.map(t=>`<tr><td class="num" style="white-space:nowrap">${t.date.slice(2)}<br><small style="color:var(--faint)">${Math.max(0,Math.round((new Date(todayStr())-new Date(t.date))/864e5))}일째</small></td><td>${refTag(t)}${esc(t.memo||t.small)}<br><small style="color:var(--faint)">${esc(t.pay)}</small></td><td class="r num">${won(t.refund)}</td><td class="c writer-only"><button class="btn small" data-ref="${t.id}">받음</button></td></tr>`).join(""):`<tr><td colspan="4" class="empty">받을 환급이 없어요.</td></tr>`;
   $("tRefund").querySelectorAll("[data-ref]").forEach(b=>b.onclick=()=>markRefund(b.dataset.ref,true));
 }
 
@@ -803,7 +805,7 @@ function renderTx(c){
   $("listSum").textContent=`${rows.length}건 · ${won(sum)}원`+(days>1?` · 일평균 ${won(sum/days)}원`:"");
   $("listFoot").textContent=rows.length>10?`${rows.length}건 중 10건씩 보여요. 목록 안에서 스크롤하세요.`:"";
   $("tList").innerHTML=rows.length?`<tr><th>날짜</th><th>주머니</th><th>분류</th><th>내역</th><th>결제</th><th class="r">금액</th><th class="r">환급</th></tr>`+rows.map(t=>{
-    const ref=t.refund>0?`<button class="refbtn" data-tg="${t.id}" ${canWrite()?"":"disabled"} title="눌러서 환급 상태 변경"><span class="pill ${t.refundDone?'ok':'wait'}">${isDutch(t)?"더치 ":""}${t.refundDone?'완료':'대기'} ${won(t.refund)}</span></button>`:(/복지/.test(t.pay)?'<span class="pill wait" title="복지카드인데 환급예정액이 비어 있어요">확인</span>':"");
+    const ref=t.refund>0?`<button class="refbtn" data-tg="${t.id}" ${canWrite()?"":"disabled"} title="눌러서 환급 상태 변경"><span class="pill ${t.refundDone?'ok':'wait'}">${REF_LABEL[t.refundKind]||"환급"} ${t.refundDone?'완료':'대기'} ${won(t.refund)}</span></button>`:(/복지/.test(t.pay)?'<span class="pill wait" title="복지카드인데 환급예정액이 비어 있어요">확인</span>':"");
     return `<tr data-id="${t.id}" class="${S.editId===t.id?'editing':''}"><td class="date">${da.slice(0,4)!==db.slice(0,4)?t.date.slice(2).replace(/-/g,"."):t.date.slice(5).replace("-",".")}</td><td><span class="dot" style="background:${pColor(t.pocket)}"></span>${esc(t.pocket)}</td><td style="white-space:nowrap">${esc(t.big)}<small style="display:block;color:var(--faint);font-size:11px">${esc(t.small)}</small></td><td class="memo">${esc(t.memo)}</td><td style="font-size:12px;color:var(--muted)">${esc(t.pay)}</td><td class="r num">${won(t.amount)}</td><td class="r">${ref}</td></tr>`;
   }).join(""):`<tr><td colspan="7" class="empty">이 기간에 기록이 없어요.${canWrite()?" 위에서 지출을 기록해 보세요.":""}</td></tr>`;
   if(canWrite()){
@@ -815,11 +817,11 @@ function startEdit(id){
   const t=S.tx.find(x=>x.id===id); if(!t) return;
   S.editId=id; $("fDate").value=t.date; $("fAmt").value=won(t.amount);
   const fc=formCfg(); fillSelect($("fPocket"),fc.pockets.map(p=>p.name),t.pocket); syncBig(t.big,true); syncSmall(t.small,true); fillSelect($("fPay"),fc.pays,t.pay);
-  $("fMemo").value=t.memo; $("fRef").value=t.refund?won(t.refund):""; $("fRefDone").checked=t.refundDone; $("fRefOn").value=t.refundOn||""; $("fRefKind").value=t.refund>0?(t.refundKind||"refund"):""; $("fDutchN").value=""; syncRefUI(); $("fRefOnWrap").hidden=!t.refundDone||!S.hasRefundOn;
+  $("fMemo").value=t.memo; $("fRef").value=t.refund?won(t.refund):""; $("fRefDone").checked=t.refundDone; $("fRefOn").value=t.refundOn||""; $("fRefKind").value=t.refund>0?(t.refundKind==="refund"?"welfare":(t.refundKind||"welfare")):""; syncRefUI(); $("fRefOnWrap").hidden=!t.refundDone||!S.hasRefundOn;
   $("formTitle").textContent="기록 수정"; $("fSave").textContent="수정 저장"; $("fCancel").hidden=false; $("fDel").hidden=false; $("fDel").textContent="삭제"; $("fDel").dataset.armed="";
   window.scrollTo({top:0,behavior:"smooth"}); render();
 }
-function endEdit(){ S.editId=null; $("formTitle").textContent="지출 기록"; $("fSave").textContent="기록하기"; $("fCancel").hidden=true; $("fDel").hidden=true; ["fAmt","fMemo","fRef"].forEach(i=>$(i).value=""); $("fRefDone").checked=false; $("fRefOn").value=""; $("fRefOnWrap").hidden=true; $("fRefKind").value=""; $("fDutchN").value=""; syncRefUI(); }
+function endEdit(){ S.editId=null; $("formTitle").textContent="지출 기록"; $("fSave").textContent="기록하기"; $("fCancel").hidden=true; $("fDel").hidden=true; ["fAmt","fMemo","fRef"].forEach(i=>$(i).value=""); $("fRefDone").checked=false; $("fRefOn").value=""; $("fRefOnWrap").hidden=true; $("fRefKind").value=""; syncRefUI(); }
 function errMsg(error){ if(!error) return; const m=error.message||String(error); toast(/row-level security|permission/i.test(m)?"이 계정은 저장 권한이 없어요.":"저장하지 못했어요: "+m); throw error; }
 async function saveTx(e){
   e.preventDefault();
@@ -831,7 +833,7 @@ async function saveTx(e){
   $("fSave").disabled=true;
   try{
     if(S.editId){ const {error}=await sb.from("tx").update(TX_OUT(t)).eq("id",S.editId); errMsg(error); toast("수정했어요."); endEdit(); }
-    else { const {error}=await sb.from("tx").insert(TX_OUT(t)); errMsg(error); toast(`${won(amount)}원 기록했어요.`); ["fAmt","fMemo","fRef"].forEach(i=>$(i).value=""); $("fRefDone").checked=false; $("fRefOn").value=""; $("fRefOnWrap").hidden=true; $("fRefKind").value=""; $("fDutchN").value=""; syncRefUI(); $("fAmt").focus(); }
+    else { const {error}=await sb.from("tx").insert(TX_OUT(t)); errMsg(error); toast(`${won(amount)}원 기록했어요.`); ["fAmt","fMemo","fRef"].forEach(i=>$(i).value=""); $("fRefDone").checked=false; $("fRefOn").value=""; $("fRefOnWrap").hidden=true; $("fRefKind").value=""; syncRefUI(); $("fAmt").focus(); }
     await loadTx(); if(t.ym!==S.ym) S.ym=t.ym; if(S.txFrom&&(date<S.txFrom||date>S.txTo)) [S.txFrom,S.txTo]=monthRange(t.ym); render(); setSync();
   }catch(_){} finally{ $("fSave").disabled=false; }
 }
@@ -848,15 +850,12 @@ async function markRefund(id,done){
 // 더치페이: 카드 실적은 결제한 전액, 실부담(용돈 차감)은 내 몫만. 친구에게 받은 돈은 용돈으로 들어옴
 function syncRefUI(){
   const k=$("fRefKind").value;
-  $("fRefWrap").hidden=!k; $("fRefDoneWrap").hidden=!k; $("fDutchWrap").hidden=k!=="dutch";
-  $("fRefLabel").textContent=k==="dutch"?"친구들에게 받을 금액":"환급예정액";
-  $("fRefDoneLabel").textContent=k==="dutch"?"다 받음":"환급 받음";
-  if(!k){ $("fRefOnWrap").hidden=true; }
-  else $("fRefOnWrap").hidden=!$("fRefDone").checked||!S.hasRefundOn;
-  if(k==="refund"&&/복지/.test($("fPay").value)&&!parseNum($("fRef").value)) $("fRef").value=$("fAmt").value;   // 복지카드는 보통 전액 환급
+  $("fRefWrap").hidden=!k; $("fRefDoneWrap").hidden=!k;
+  $("fRefLabel").textContent=k==="dutch"?"친구들에게 받을 금액":k==="wife"?"와이프에게 받을 금액":"환급예정액";
+  $("fRefDoneLabel").textContent=k==="dutch"?"다 받음":k==="wife"?"받음":"환급 받음";
+  $("fRefOnWrap").hidden=!k||!$("fRefDone").checked||!S.hasRefundOn;
+  if(k==="welfare"&&!parseNum($("fRef").value)) $("fRef").value=$("fAmt").value;   // 복지카드는 보통 전액 환급
 }
-function dutchCalc(){ const n=parseInt($("fDutchN").value,10), amt=parseNum($("fAmt").value);
-  if($("fRefKind").value==="dutch"&&n>=2&&amt){ const mine=Math.round(amt/n); $("fRef").value=won(amt-mine); $("fDutchN").title=`내 몫 ${won(mine)}원`; toast(`내 몫 ${won(mine)}원 · 받을 돈 ${won(amt-mine)}원`); } }
 
 /* ---------- 내역 메모 자동 추천 ---------- */
 // 예전에 쓴 메모를 모아, 입력한 글자가 들어간 것을 자주·최근 쓴 순서로 보여줌. 고르면 주머니·분류·결제수단(금액이 비어 있으면 금액도)을 채움
@@ -982,11 +981,11 @@ function renderAssets(c){
   // 저축으로 옮길 돈
   if(stashYM!==ym||!stashDraft){ stashDraft=JSON.parse(JSON.stringify(stashOf(ym))); stashYM=ym; }
   const fs=fixedSaving(c), fsum=fs.reduce((x,f)=>x+f.diff,0), other=c.m.otherIn||0;
-  const refundIn=S.tx.filter(t=>t.refundDone&&t.refund>0&&!isDutch(t)&&refundYM(t)===ym).reduce((x,t)=>x+t.refund,0);   // 더치페이로 받은 돈은 용돈이라 저축 추천에서 제외
+  const refundIn=S.tx.filter(t=>t.refundDone&&t.refund>0&&!isDutch(t)&&!isWifeRef(t)&&refundYM(t)===ym).reduce((x,t)=>x+t.refund,0);   // 복지·교통카드 환급만 (더치페이=용돈, 생활비환급=와이프 정산)
   const has=src=>stashDraft.some(s=>s.src===src);
   const sug=[];
   if(fsum>0&&!has("고정비 차액")) sug.push({src:"고정비 차액",amount:fsum,memo:fs.map(f=>`${f.name} ${won(f.diff)}`).join(", ")});
-  if(refundIn>0&&!has("환급")) sug.push({src:"환급",amount:refundIn,memo:"복지·교통 환급 받은 금액 (더치페이 제외)"});
+  if(refundIn>0&&!has("환급")) sug.push({src:"환급",amount:refundIn,memo:"복지카드·교통카드 환급 받은 금액"});
   if(other>0&&!has("캐시백·이자")) sug.push({src:"캐시백·이자",amount:other,memo:"월별 입력의 기타 입금"});
   $("stashHint").textContent=sv.length?`파킹 등 저축 통장으로 옮길 돈`:"설정 → 통장에서 저축 통장을 체크하세요";
   $("stashSug").innerHTML=sug.length&&canWrite()?`<div class="hint" style="margin-bottom:4px">이번 달 옮길 수 있는 돈</div>`+sug.map((s,i)=>`<button type="button" class="sugpill" data-sg="${i}"><b>${esc(s.src)}</b> ${won(s.amount)}원 <small>${esc(s.memo)}</small> <span>+ 추가</span></button>`).join(""):"";
@@ -1360,8 +1359,7 @@ function moneyFormat(el){
 }
 document.addEventListener("input",e=>{ const el=e.target; if(el.matches&&el.matches("input[data-money]")) moneyFormat(el); });
 ["flPocket","flBig","flSmall","flText"].forEach(id=>$(id).addEventListener("input",()=>render()));
-$("fRefKind").addEventListener("change",()=>{ syncRefUI(); dutchCalc(); });
-$("fDutchN").addEventListener("change",dutchCalc); $("fAmt").addEventListener("change",dutchCalc);
+$("fRefKind").addEventListener("change",syncRefUI);
 $("fRefDone").addEventListener("change",e=>{ $("fRefOnWrap").hidden=!e.target.checked||!S.hasRefundOn; if(e.target.checked&&!$("fRefOn").value) $("fRefOn").value=todayStr(); });
 $("fMemo").addEventListener("input",showSuggest);
 $("fMemo").addEventListener("focus",showSuggest);
