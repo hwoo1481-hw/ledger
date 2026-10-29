@@ -221,6 +221,14 @@ table.cmp td,table.cmp th{white-space:nowrap}
 .sugpill span{margin-left:auto;color:var(--accent);font-weight:600;font-size:12px}
 #tStash select{min-width:112px}
 tr.cur td{background:var(--accent-soft)}
+/* 정렬 가능한 제목 */
+th.sortable{padding:0}
+.sorth{border:0;background:transparent;font:inherit;font-size:12px;color:var(--muted);padding:6px 8px;display:inline-flex;gap:4px;align-items:center;width:100%;white-space:nowrap;cursor:pointer}
+th.r .sorth{justify-content:flex-end}
+.sorth span{font-size:10px;opacity:.45}
+.sorth.on{color:var(--ink);font-weight:600}
+.sorth.on span{opacity:1;color:var(--accent)}
+.sorth:hover{color:var(--ink)}
 </style>
 </head>
 <body>
@@ -352,6 +360,7 @@ tr.cur td{background:var(--accent-soft)}
         <select id="flPocket" aria-label="주머니 필터"></select>
         <select id="flBig" aria-label="대분류 필터"></select>
         <select id="flSmall" aria-label="소분류 필터"></select>
+        <select id="flPay" aria-label="결제수단 필터"></select>
         <input id="flText" type="search" placeholder="메모 검색" aria-label="메모 검색">
         <button type="button" class="btn small" id="flReset" hidden>필터 초기화</button>
         <button type="button" class="btn small writer-only" id="bulkOpen" hidden>조회된 기록 분류 바꾸기</button>
@@ -527,8 +536,8 @@ const DEFAULT_CFG = {
   accounts:[{name:"국민(주거래)",role:"월급·고정비·비상금 100만"},{name:"국민(적금)",role:"적금 월 50만",save:true},{name:"우리",role:"용돈·식사비",allow:true},{name:"수협(파킹)",role:"파킹 저축",save:true}]
 };
 const S = { cfg:DEFAULT_CFG, versions:[], editVer:null, tx:[], months:{}, notes:{}, ym:ymOf(todayStr()), tab:"dash", editId:null, role:null,
-  trendMode:"pocket", trendSel:{pocket:null,cat:null}, txFrom:null, txTo:null };
-try { const t=localStorage.getItem("lg.tab"); if(t) S.tab=t; const tr=JSON.parse(localStorage.getItem("lg.trend")||"null"); if(tr){ S.trendMode=tr.mode||"pocket"; S.trendSel=tr.sel||S.trendSel; S.trendPocket=tr.pocket||""; } } catch(e){}
+  txSort:{key:"date",dir:"desc"}, trendMode:"pocket", trendSel:{pocket:null,cat:null}, txFrom:null, txTo:null };
+try { const t=localStorage.getItem("lg.tab"); if(t) S.tab=t; const so=JSON.parse(localStorage.getItem("lg.sort")||"null"); if(so&&so.key) S.txSort=so; const tr=JSON.parse(localStorage.getItem("lg.trend")||"null"); if(tr){ S.trendMode=tr.mode||"pocket"; S.trendSel=tr.sel||S.trendSel; S.trendPocket=tr.pocket||""; } } catch(e){}
 const fmtD = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 const monthRange = ym => { const [y,m]=ym.split("-").map(Number); return [`${ym}-01`,`${ym}-${pad(new Date(y,m,0).getDate())}`]; };
 const shortWon = n => { const v=Math.abs(n); if(v>=1e8) return (n/1e8).toFixed(1).replace(/\.0$/,"")+"억"; if(v>=1e4) return Math.round(n/1e4).toLocaleString("ko-KR")+"만"; return won(n); };
@@ -769,6 +778,16 @@ function initForm(){
   fillSelect($("fPay"),fc.pays,pickIn(fc.pays,$("fPay").value,fc.pays[0]));
   formInit=true;
 }
+// 정렬: 제목을 누르면 그 열 기준 오름/내림 전환 (같은 값이면 날짜 최신순)
+const SORT_COLS=[["date","날짜"],["pocket","주머니"],["big","분류"],["memo","내역"],["pay","결제"],["amount","금액","r"],["refund","환급","r"]];
+function txSorter(){ const {key,dir}=S.txSort, m=dir==="asc"?1:-1;
+  const v=t=>key==="big"?`${t.big}\u0000${t.small}`:t[key];
+  const cmp=(x,y)=>(typeof x==="number"&&typeof y==="number")?x-y:String(x??"").localeCompare(String(y??""),"ko");
+  return (a,b)=>{ const r=cmp(v(a),v(b)); if(r) return r*m;
+    if(a.date!==b.date) return a.date<b.date?1:-1;            // 같은 값이면 최신 기록 먼저
+    return String(b.createdAt).localeCompare(String(a.createdAt)); }; }
+function txHead(){ return `<tr>${SORT_COLS.map(([k,l,c])=>{ const on=S.txSort.key===k; return `<th class="${c||""} sortable"><button type="button" class="sorth ${on?"on":""}" data-sort="${k}" aria-label="${l} 기준 정렬">${l}<span>${on?(S.txSort.dir==="asc"?"▲":"▼"):"↕"}</span></button></th>`; }).join("")}</tr>`; }
+
 // 목록에 실제로 있는 값만 (건수와 함께) 보여주고, 선택값이 사라지면 '전체'로 되돌림
 function cascadeSelect(sel,rows,key,order,allLabel){
   const cnt=new Map(); rows.forEach(t=>cnt.set(t[key],(cnt.get(t[key])||0)+1));
@@ -789,22 +808,23 @@ function renderTx(c){
   //  (주머니를 먼저 고르든 대분류를 먼저 고르든 서로 좁혀짐)
   const F=[{el:$("flPocket"),key:"pocket",order:allPocketNames(),all:"전체 주머니"},
            {el:$("flBig"),key:"big",order:allCatNames(),all:"전체 대분류"},
-           {el:$("flSmall"),key:"small",order:allSmallNames(),all:"전체 소분류"}];
+           {el:$("flSmall"),key:"small",order:allSmallNames(),all:"전체 소분류"},
+           {el:$("flPay"),key:"pay",order:unionNames(v=>v.pays,"pay"),all:"전체 결제수단"}];
   const val=F.map(f=>f.el.value);
   const match=(t,skip)=>F.every((f,i)=>i===skip||!val[i]||t[f.key]===val[i]);
   for(let pass=0;pass<2;pass++) F.forEach((f,i)=>{ val[i]=cascadeSelect(f.el,inRange.filter(t=>match(t,i)),f.key,f.order,f.all); });
-  const [fp,fb,fs]=val, ft=$("flText").value.trim();
-  $("flReset").hidden=!(fp||fb||fs||ft);
+  const [fp,fb,fs,fy]=val, ft=$("flText").value.trim();
+  $("flReset").hidden=!(fp||fb||fs||fy||ft);
   S.txRowsFilter={fp,fb,fs,ft};
-  const rows=inRange.filter(t=>match(t,-1)).filter(t=>!ft||t.memo.includes(ft)||t.small.includes(ft)).sort((a,b)=>a.date===b.date?String(b.createdAt).localeCompare(String(a.createdAt)):(a.date<b.date?1:-1));
+  const rows=inRange.filter(t=>match(t,-1)).filter(t=>!ft||t.memo.includes(ft)||t.small.includes(ft)).sort(txSorter());
   S.txRows=rows;
-  $("bulkOpen").hidden=!canWrite()||!(fp||fb||fs||ft)||!rows.length; $("bulkOpen").textContent=`조회된 ${rows.length}건 분류 바꾸기`;
+  $("bulkOpen").hidden=!canWrite()||!(fp||fb||fs||fy||ft)||!rows.length; $("bulkOpen").textContent=`조회된 ${rows.length}건 분류 바꾸기`;
   if(!$("bulkBox").hidden) $("bulkInfo").textContent=`조회된 ${rows.length}건을 →`;
   const days=Math.round((new Date(db)-new Date(da))/864e5)+1, sum=rows.reduce((x,t)=>x+t.amount,0);
   $("listTitle").textContent=da===db?`${da} 거래내역`:`${da} ~ ${db}`;
   $("listSum").textContent=`${rows.length}건 · ${won(sum)}원`+(days>1?` · 일평균 ${won(sum/days)}원`:"");
   $("listFoot").textContent=rows.length>10?`${rows.length}건 중 10건씩 보여요. 목록 안에서 스크롤하세요.`:"";
-  $("tList").innerHTML=rows.length?`<tr><th>날짜</th><th>주머니</th><th>분류</th><th>내역</th><th>결제</th><th class="r">금액</th><th class="r">환급</th></tr>`+rows.map(t=>{
+  $("tList").innerHTML=rows.length?txHead()+rows.map(t=>{
     const ref=t.refund>0?`<button class="refbtn" data-tg="${t.id}" ${canWrite()?"":"disabled"} title="눌러서 환급 상태 변경"><span class="pill ${t.refundDone?'ok':'wait'}">${REF_LABEL[t.refundKind]||"환급"} ${t.refundDone?'완료':'대기'} ${won(t.refund)}</span></button>`:(/복지/.test(t.pay)?'<span class="pill wait" title="복지카드인데 환급예정액이 비어 있어요">확인</span>':"");
     return `<tr data-id="${t.id}" class="${S.editId===t.id?'editing':''}"><td class="date">${da.slice(0,4)!==db.slice(0,4)?t.date.slice(2).replace(/-/g,"."):t.date.slice(5).replace("-",".")}</td><td><span class="dot" style="background:${pColor(t.pocket)}"></span>${esc(t.pocket)}</td><td style="white-space:nowrap">${esc(t.big)}<small style="display:block;color:var(--faint);font-size:11px">${esc(t.small)}</small></td><td class="memo">${esc(t.memo)}</td><td style="font-size:12px;color:var(--muted)">${esc(t.pay)}</td><td class="r num">${won(t.amount)}</td><td class="r">${ref}</td></tr>`;
   }).join(""):`<tr><td colspan="7" class="empty">이 기간에 기록이 없어요.${canWrite()?" 위에서 지출을 기록해 보세요.":""}</td></tr>`;
@@ -1359,7 +1379,7 @@ function moneyFormat(el){
   try{ el.setSelectionRange(i,i); }catch(e){}
 }
 document.addEventListener("input",e=>{ const el=e.target; if(el.matches&&el.matches("input[data-money]")) moneyFormat(el); });
-["flPocket","flBig","flSmall","flText"].forEach(id=>$(id).addEventListener("input",()=>render()));
+["flPocket","flBig","flSmall","flPay","flText"].forEach(id=>$(id).addEventListener("input",()=>render()));
 $("fRefKind").addEventListener("change",syncRefUI);
 $("fRefDone").addEventListener("change",e=>{ $("fRefOnWrap").hidden=!e.target.checked||!S.hasRefundOn; if(e.target.checked&&!$("fRefOn").value) $("fRefOn").value=todayStr(); });
 $("fMemo").addEventListener("input",showSuggest);
@@ -1375,7 +1395,10 @@ $("bulkOpen").onclick=()=>{ $("bulkBox").hidden=false; bulkFill(); $("bulkInfo")
 $("bClose").onclick=()=>{ $("bulkBox").hidden=true; };
 ["bPocket","bBig"].forEach(id=>$(id).addEventListener("change",bulkFill)); $("bSmall").addEventListener("change",()=>{ $("bApply").dataset.armed=""; $("bApply").textContent="바꾸기"; });
 $("bApply").onclick=bulkApply;
-$("flReset").onclick=()=>{ ["flPocket","flBig","flSmall","flText"].forEach(id=>$(id).value=""); render(); };
+$("flReset").onclick=()=>{ ["flPocket","flBig","flSmall","flPay","flText"].forEach(id=>$(id).value=""); render(); };
+$("tList").addEventListener("click",e=>{ const b=e.target.closest("[data-sort]"); if(!b) return; e.stopPropagation(); const k=b.dataset.sort;
+  S.txSort=S.txSort.key===k?{key:k,dir:S.txSort.dir==="asc"?"desc":"asc"}:{key:k,dir:(k==="date"||k==="amount"||k==="refund")?"desc":"asc"};
+  try{ localStorage.setItem("lg.sort",JSON.stringify(S.txSort)); }catch(_){} render(); });
 $("flFrom").addEventListener("change",e=>{ if(e.target.value){ S.txFrom=e.target.value; render(); } });
 $("flTo").addEventListener("change",e=>{ if(e.target.value){ S.txTo=e.target.value; render(); } });
 document.querySelectorAll("[data-q]").forEach(b=>b.onclick=()=>quickRange(b.dataset.q));
