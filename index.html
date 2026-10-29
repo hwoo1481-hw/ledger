@@ -214,6 +214,11 @@ table.cmp td,table.cmp th{white-space:nowrap}
 .sugitem .m mark{background:transparent;color:var(--accent);text-decoration:underline}
 .sugitem .d{font-size:11.5px;color:var(--muted)}
 .field.wide{position:relative}
+/* 자산 관리 */
+.stashsug{display:flex;flex-direction:column;gap:6px}
+.sugpill{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;text-align:left;border:1px dashed var(--accent);background:var(--accent-soft);border-radius:8px;padding:7px 10px;font-size:13px}
+.sugpill small{color:var(--muted);font-size:11.5px}
+.sugpill span{margin-left:auto;color:var(--accent);font-weight:600;font-size:12px}
 </style>
 </head>
 <body>
@@ -242,9 +247,9 @@ table.cmp td,table.cmp th{white-space:nowrap}
       </div>
     </div>
     <nav class="tabs" role="tablist">
-      <button role="tab" data-tab="dash" aria-selected="true">대시보드</button>
-      <button role="tab" data-tab="tx" aria-selected="false">내역</button>
-      <button role="tab" data-tab="month" aria-selected="false">월별 정산</button>
+      <button role="tab" data-tab="dash" aria-selected="true">소비 대시보드</button>
+      <button role="tab" data-tab="tx" aria-selected="false">소비 내역</button>
+      <button role="tab" data-tab="month" aria-selected="false">자산 관리</button>
       <button role="tab" data-tab="report" aria-selected="false">보고서</button>
       <button role="tab" data-tab="cfg" aria-selected="false">설정</button>
     </nav>
@@ -362,9 +367,29 @@ table.cmp td,table.cmp th{white-space:nowrap}
 
   <!-- 월별 정산 -->
   <section class="view" id="v-month" hidden>
+    <div class="kpis" id="aKpis"></div>
+    <div class="grid2">
+      <div class="panel">
+        <div class="phead"><h2 id="aBalTitle">통장별 월말 잔액</h2><span class="hint">한 달에 한 번, 월말에 입력</span></div>
+        <div class="scroll tbl-in"><table id="tAcct"></table></div>
+        <div class="btns writer-only"><button class="btn primary small" id="saveBal">잔액 저장</button><button class="btn small" id="copyBal">지난달 잔액 불러오기</button></div>
+      </div>
+      <div class="panel">
+        <div class="phead"><h2>저금통 (파킹통장)</h2><span class="hint" id="stashHint"></span></div>
+        <div class="stashsug" id="stashSug"></div>
+        <div class="scroll tbl-in"><table id="tStash"></table></div>
+        <div class="btns writer-only"><button class="btn small" id="addStash">+ 직접 추가</button><button class="btn primary small" id="saveStash">저금통 저장</button></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="phead"><h2>자산 추이 (최근 12개월)</h2><span class="hint" id="assetHint"></span></div>
+      <div class="legend" id="assetLegend"></div>
+      <div class="trend" id="assetTrend"></div>
+      <div class="tlabels" id="assetLabels"></div>
+    </div>
     <div class="banner" data-kind="info">이 달의 들어온 돈·보낸 돈을 적으면 잔액과 개인예산이 자동 계산됩니다. 신용카드는 쓴 날 기준으로 빠지므로, 실제 통장잔액과의 차이는 대부분 아직 결제 안 된 카드값입니다.</div>
     <div class="panel">
-      <div class="phead"><h2 id="mTitle">월별 입력</h2></div>
+      <div class="phead"><h2 id="mTitle">이번 달 수입·송금 입력</h2></div>
       <form id="mForm" class="form" autocomplete="off">
         <div class="field"><label for="mSalary">월급</label><input id="mSalary" data-money inputmode="numeric"></div>
         <div class="field"><label for="mAllow">용돈</label><input id="mAllow" data-money inputmode="numeric"></div>
@@ -373,7 +398,7 @@ table.cmp td,table.cmp th{white-space:nowrap}
         <div class="field"><label for="mToWife">와이프에게 보낸 금액</label><input id="mToWife" data-money inputmode="numeric"></div>
         <div class="field"><label for="mMealIn">식사비 받은 금액</label><input id="mMealIn" data-money inputmode="numeric"></div>
         <div class="field"><label for="mSettleIn">정산 받은 금액 (공동+와이프관리)</label><input id="mSettleIn" data-money inputmode="numeric"></div>
-        <div class="field"><label for="mOtherIn">기타 입금</label><input id="mOtherIn" data-money inputmode="numeric"></div>
+        <div class="field"><label for="mOtherIn">기타 입금 (캐시백·이자 등)</label><input id="mOtherIn" data-money inputmode="numeric"></div>
         <div class="field"><label for="mOpen">월초 잔액 (직접 지정 시)</label><input id="mOpen" data-money inputmode="numeric" placeholder="비우면 전월에서 이월"></div>
         <div class="field"><label for="mActual">월말 실제 통장잔액</label><input id="mActual" data-money inputmode="numeric" placeholder="확인용"></div>
         <div class="btns writer-only" style="grid-column:1/-1"><button class="btn primary" type="submit">저장</button></div>
@@ -454,6 +479,11 @@ table.cmp td,table.cmp th{white-space:nowrap}
       <div class="btns writer-only"><span id="catActions" class="btns"></span><button class="btn small" id="catRecommend" title="고정비/개인/생활·데이트 주머니에 추천 카테고리를 채워요">추천 카테고리 채우기</button></div>
     </div>
     <div class="panel">
+      <div class="phead"><h2>통장</h2><span class="hint">자산 관리 탭에서 월말 잔액을 적을 통장 · 저금통 통장 1개 지정</span></div>
+      <div class="scroll tbl-in"><table id="cAcct"></table></div>
+      <div class="btns writer-only"><button class="btn small" id="addAcct">+ 통장 추가</button></div>
+    </div>
+    <div class="panel">
       <div class="phead"><h2>결제수단</h2><span class="hint">쉼표로 구분</span></div>
       <div class="field"><textarea id="cPays" rows="2" aria-label="결제수단 목록"></textarea></div>
     </div>
@@ -484,7 +514,8 @@ const DEFAULT_CFG = {
   fixed:[{name:"월세",small:"월세",amount:200000,day:9},{name:"전세대출 이자",small:"대출이자",amount:241850,day:10},{name:"보험료",small:"보험료",amount:118994,day:10},{name:"통신비",small:"통신비",amount:102090,day:11},{name:"가스비",small:"가스·관리비",amount:30000,day:10},{name:"교통비(후불)",small:"교통비",amount:150000,day:5},{name:"적금",small:"적금",amount:0,day:25}],
   cats:{"주거":["월세","대출이자","가스·관리비"],"고정지출":["통신비","보험료","구독료","적금","세금"],"식비":["회사점심","회사저녁","집밥·식재료","외식·배달","술"],"카페간식":["카페","간식"],"교통":["교통비","주유","주차"],"경조사":["선물","기념일","명절·행사","경조사비"],"생활쇼핑":["의류","가전·전자","미용","생활용품"],"건강":["병원","약"],"여가":["게임","영화·공연","놀이","사진"],"자기계발":["자격증·교육","도서"],"기타":["로또","기타"]},
   pays:["국민체크카드","삼성신용카드","롯데신용카드","국민신용카드(복지)","신한체크교통카드","네이버페이","카카오페이","계좌이체","현금"],
-  defaults:{allowance:200000,mealUnit:8000}
+  defaults:{allowance:200000,mealUnit:8000},
+  accounts:[{name:"국민(주거래)",role:"월급·고정비·비상금 100만"},{name:"국민(적금)",role:"적금 월 50만"},{name:"우리",role:"용돈·식사비"},{name:"수협(파킹)",role:"저금통",stash:true}]
 };
 const S = { cfg:DEFAULT_CFG, versions:[], editVer:null, tx:[], months:{}, notes:{}, ym:ymOf(todayStr()), tab:"dash", editId:null, role:null,
   trendMode:"pocket", trendSel:{pocket:null,cat:null}, txFrom:null, txTo:null };
@@ -521,7 +552,7 @@ const sb = supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY);
 const TX_IN = r => ({id:r.id,date:r.date,ym:r.ym,pocket:r.pocket,big:r.big,small:r.small,memo:r.memo||"",pay:r.pay||"",amount:Number(r.amount)||0,refund:Number(r.refund)||0,refundDone:!!r.refund_done,createdAt:r.created_at});
 const TX_OUT = t => ({date:t.date,ym:t.ym,pocket:t.pocket,big:t.big,small:t.small,memo:t.memo,pay:t.pay,amount:t.amount,refund:t.refund,refund_done:t.refundDone,updated_at:new Date().toISOString()});
 const MCOL = {salary:"salary",allowance:"allowance",workdays:"workdays",mealUnit:"meal_unit",toWife:"to_wife",mealIn:"meal_in",settleIn:"settle_in",otherIn:"other_in",openBal:"open_bal",actualBal:"actual_bal"};
-const M_IN = r => { const o={}; for(const k in MCOL){ const v=r[MCOL[k]]; o[k]=v==null?null:Number(v); } return o; };
+const M_IN = r => { const o={}; for(const k in MCOL){ const v=r[MCOL[k]]; o[k]=v==null?null:Number(v); } o.balances=r.balances||{}; o.stash=Array.isArray(r.stash)?r.stash:[]; o._hasAsset=("balances" in r); return o; };
 
 async function loadTx(){ const out=[]; for(let from=0;;from+=1000){ const {data,error}=await sb.from("tx").select("*").order("date").range(from,from+999); if(error) throw error; out.push(...data.map(TX_IN)); if(data.length<1000) break; } S.tx=out; }
 async function loadMonths(){ const {data,error}=await sb.from("months").select("*"); if(error) throw error; S.months={}; data.forEach(r=>S.months[r.ym]=M_IN(r)); }
@@ -590,8 +621,10 @@ function compute(ym){
   const payN=[...cfg.pays]; txs.forEach(t=>{ if(t.pay&&!payN.includes(t.pay)) payN.push(t.pay); });
   const pays=payN.map(p=>({pay:p,amt:txs.filter(t=>t.pay===p).reduce((a,t)=>a+t.amount,0),n:txs.filter(t=>t.pay===p).length})).filter(p=>p.n>0);
   const settle=tot("settle");
+  // 내 기준: 수입 = 월급 − 와이프 송금 + 식사비 + 기타입금 / 순지출 = 실부담 − 와이프가 부담할 몫
+  const myIncome=(m.salary||0)-(m.toWife||0)+(m.mealIn||0)+(m.otherIn||0), myNet=tot("net")-settle;
   return { ym,m,txs,pockets,amt:tot("amt"),ref:tot("ref"),net:tot("net"),budget,used,remain:budget-used,fixed,fixedPlan:fixedTotal(ym),
-    fixedPaid:pockets.filter(p=>p.name==="고정비").reduce((a,p)=>a+p.amt,0),cats,pays,settle,settleLeft:settle-(m.settleIn||0),bal:balance(ym),
+    fixedPaid:pockets.filter(p=>p.name==="고정비").reduce((a,p)=>a+p.amt,0),cats,pays,settle,settleLeft:settle-(m.settleIn||0),bal:balance(ym),myIncome,myNet,myLeft:myIncome-myNet,
     wifeRec:m.salary==null?null:m.salary-(m.allowance||0)-fixedTotal(ym) };
 }
 
@@ -625,7 +658,9 @@ function renderDash(c){
     kpi("고정비 납부", c.fixedPaid, unpaid?`예정 ${won(c.fixedPlan)} · <b style="color:var(--bad)">미납 ${unpaid}건</b>`:`예정 ${won(c.fixedPlan)} · 미납 없음`) +
     kpi("와이프에게 받을 금액", c.settleLeft, `${settleBase||"-"} · 받은 ${won(c.m.settleIn||0)}`) +
     kpi("환급 대기", pendSum, `${pend.length}건 · 전체 기간`) +
-    kpi("월말 계산잔액", c.bal.close, c.bal.actual==null?`월초 ${won(c.bal.open)} (${c.bal.openSrc})`:`실제와 차이 ${won(c.bal.diff)}`);
+    (c.m.salary==null
+      ? kpi("이번 달 남은 돈", 0, `월급을 입력하면 계산돼요 · 순지출 ${won(c.myNet)}`)
+      : kpi("이번 달 남은 돈", c.myLeft, `내 수입 ${won(c.myIncome)} − 순지출 ${won(c.myNet)}`, "", c.myIncome>0?100*Math.max(0,c.myLeft)/c.myIncome:0));
   $("globalMsg").innerHTML=(S.tab==="dash"&&msgs.length&&canWrite())?`<div class="banner" style="margin-top:16px">${msgs.join(" ")} <a href="#" id="goMonth" style="color:var(--accent);font-weight:600">월별 정산에서 입력 →</a></div>`:"";
   const gm=$("goMonth"); if(gm) gm.onclick=e=>{e.preventDefault();setTab("month")};
   const note=S.notes[`${S.ym}~${S.ym}`];
@@ -851,7 +886,8 @@ async function bulkApply(){
 const MF={mSalary:"salary",mAllow:"allowance",mDays:"workdays",mUnit:"mealUnit",mToWife:"toWife",mMealIn:"mealIn",mSettleIn:"settleIn",mOtherIn:"otherIn",mOpen:"openBal",mActual:"actualBal"};
 let mFormYM=null;
 function renderMonth(c){
-  $("mTitle").textContent=`${S.ym} 입력`;
+  renderAssets(c);
+  $("mTitle").textContent=`${S.ym} 수입·송금 입력`;
   if(mFormYM!==S.ym||!$("v-month").contains(document.activeElement)){ const m=monthDoc(S.ym); for(const id in MF){ const v=m[MF[id]]; $(id).value=v==null?"":won(v); $(id).readOnly=!canWrite(); } mFormYM=S.ym; }
   const b=c.bal;
   const m=c.m, row=(a,v,n,s)=>`<tr${s?' class="total"':''}><td>${a}</td><td class="r num ${v<0?'neg':''}">${v==null?'<span style="color:var(--faint)">미입력</span>':won(v)}</td><td style="font-size:12px;color:var(--faint)">${n||""}</td></tr>`;
@@ -867,6 +903,67 @@ function renderMonth(c){
     row("= 월말 계산잔액",b.close,"",true),
     row("실제 통장잔액",b.actual,"직접 확인"),
     row("차이 (실제 − 계산)",b.diff,"대부분 미결제 카드값")].join("");
+}
+
+/* ---------- 자산 관리 ---------- */
+const accountsFor = ym => (cfgFor(ym).accounts||DEFAULT_CFG.accounts);
+const balOf = ym => (S.months[ym]?.balances)||{};
+const stashOf = ym => (S.months[ym]?.stash)||[];
+function totalAssets(ym){ const b=balOf(ym); const vals=Object.values(b).filter(v=>v!=null); return vals.length?vals.reduce((x,y)=>x+Number(y),0):null; }
+function stashAcct(ym){ return accountsFor(ym).find(a=>a.stash)?.name; }
+// 고정비 차액: 매월 고정비 중 이번 달 낸 항목의 (예정 − 실제). 부정기(가스비 등)는 다음 청구 대비로 제외
+function fixedSaving(c){ return c.fixed.filter(f=>f.cycle!=="flex"&&f.paid>0&&(Number(f.amount)||0)>f.paid).map(f=>({name:f.name,diff:(Number(f.amount)||0)-f.paid})); }
+let stashDraft=null, stashYM=null;
+function renderAssets(c){
+  const ym=S.ym, accts=accountsFor(ym), bal=balOf(ym), prev=balOf(addM(ym,-1));
+  const tot=totalAssets(ym), ptot=totalAssets(addM(ym,-1)), sa=stashAcct(ym);
+  const stashTotal=Object.keys(S.months).filter(k=>k<=ym).reduce((x,k)=>x+stashOf(k).filter(s=>s.done).reduce((y,s)=>y+(Number(s.amount)||0),0),0);
+  const stashMonth=stashOf(ym).filter(s=>s.done).reduce((y,s)=>y+(Number(s.amount)||0),0);
+  $("aKpis").innerHTML=
+    kpi("총자산 (월말 통장 합계)", tot??0, tot==null?"아래에 이번 달 월말 잔액을 입력하세요":`${ym} 기준 · 통장 ${Object.keys(bal).length}개`, "hero") +
+    kpi("지난달 대비", tot==null||ptot==null?0:tot-ptot, tot==null||ptot==null?"두 달 잔액이 있어야 계산돼요":`${won(ptot)} → ${won(tot)}`) +
+    kpi("이번 달 남은 돈", c.m.salary==null?0:c.myLeft, c.m.salary==null?"월급 입력 필요":`내 수입 ${won(c.myIncome)} − 순지출 ${won(c.myNet)}`) +
+    kpi("저금통 누적", sa&&bal[sa]!=null?Number(bal[sa]):stashTotal, sa&&bal[sa]!=null?`${sa} 월말 잔액 · 이번 달 +${won(stashMonth)}`:`옮긴 금액 합계 · 이번 달 +${won(stashMonth)}`);
+  $("aBalTitle").textContent=`${ym} 통장별 월말 잔액`;
+  const ro=canWrite()?"":"disabled";
+  if(!$("v-month").contains(document.activeElement)||stashYM!==ym){
+    $("tAcct").innerHTML=`<tr><th>통장</th><th>역할</th><th class="r">월말 잔액</th><th class="r">지난달</th><th class="r">증감</th></tr>`+accts.map((a,i)=>{ const v=bal[a.name], p=prev[a.name];
+      return `<tr><td style="white-space:nowrap">${esc(a.name)}${a.stash?' <span class="pill mute">저금통</span>':""}</td><td style="font-size:12px;color:var(--muted)">${esc(a.role||"")}</td><td><input data-bal="${esc(a.name)}" data-money inputmode="numeric" value="${v==null?"":won(v)}" style="text-align:right" ${ro} aria-label="${esc(a.name)} 잔액"></td><td class="r num" style="color:var(--muted)">${p==null?"-":won(p)}</td><td class="r num ${v!=null&&p!=null&&v-p<0?"neg":""}">${v==null||p==null?"-":(v-p>0?"+":"")+won(v-p)}</td></tr>`; }).join("")+
+      `<tr class="total"><td>합계</td><td></td><td class="r num">${tot==null?"-":won(tot)}</td><td class="r num">${ptot==null?"-":won(ptot)}</td><td class="r num">${tot==null||ptot==null?"-":(tot-ptot>0?"+":"")+won(tot-ptot)}</td></tr>`;
+  }
+  // 저금통
+  if(stashYM!==ym||!stashDraft){ stashDraft=JSON.parse(JSON.stringify(stashOf(ym))); stashYM=ym; }
+  const fs=fixedSaving(c), fsum=fs.reduce((x,f)=>x+f.diff,0), refundIn=c.bal.refundIn, other=c.m.otherIn||0;
+  const has=src=>stashDraft.some(s=>s.src===src);
+  const sug=[];
+  if(fsum>0&&!has("고정비 차액")) sug.push({src:"고정비 차액",amount:fsum,memo:fs.map(f=>`${f.name} ${won(f.diff)}`).join(", ")});
+  if(refundIn>0&&!has("환급")) sug.push({src:"환급",amount:refundIn,memo:"환급완료 처리된 금액"});
+  if(other>0&&!has("캐시백·이자")) sug.push({src:"캐시백·이자",amount:other,memo:"월별 입력의 기타 입금"});
+  $("stashHint").textContent=sa?`${sa}로 옮길 돈`:"설정 → 통장에서 저금통 통장을 지정하세요";
+  $("stashSug").innerHTML=sug.length&&canWrite()?`<div class="hint" style="margin-bottom:4px">이번 달 옮길 수 있는 돈</div>`+sug.map((s,i)=>`<button type="button" class="sugpill" data-sg="${i}"><b>${esc(s.src)}</b> ${won(s.amount)}원 <small>${esc(s.memo)}</small> <span>+ 추가</span></button>`).join(""):"";
+  $("stashSug").querySelectorAll("[data-sg]").forEach(b=>b.onclick=()=>{ collectStash(); stashDraft.push({...sug[+b.dataset.sg],done:false}); renderAssets(compute(S.ym)); });
+  $("tStash").innerHTML=stashDraft.length?`<tr><th>출처</th><th class="r">금액</th><th>메모</th><th class="c">옮김</th><th class="writer-only"></th></tr>`+stashDraft.map((s,i)=>`<tr><td><select data-st="${i}" data-k="src" ${ro}>${["고정비 차액","환급","캐시백·이자","기타"].map(o=>`<option ${o===s.src?"selected":""}>${o}</option>`).join("")}</select></td><td><input data-st="${i}" data-k="amount" data-money inputmode="numeric" value="${won(s.amount)}" style="text-align:right" ${ro}></td><td><input data-st="${i}" data-k="memo" value="${esc(s.memo||"")}" ${ro}></td><td class="c"><input type="checkbox" data-st="${i}" data-k="done" ${s.done?"checked":""} style="width:auto;height:auto;min-width:0" ${ro} aria-label="옮김"></td><td class="writer-only"><button class="btn small danger" data-sdel="${i}">빼기</button></td></tr>`).join("")+
+    `<tr class="total"><td>이번 달</td><td class="r num">${won(stashDraft.reduce((x,s)=>x+(Number(s.amount)||0),0))}</td><td colspan="3" style="font-size:12px;color:var(--muted)">옮김 체크 ${won(stashDraft.filter(s=>s.done).reduce((x,s)=>x+(Number(s.amount)||0),0))}원</td></tr>`
+    :`<tr><td class="empty">아직 기록이 없어요. 위 추천을 누르거나 직접 추가하세요.</td></tr>`;
+  $("tStash").querySelectorAll("[data-sdel]").forEach(b=>b.onclick=()=>{ collectStash(); stashDraft.splice(+b.dataset.sdel,1); renderAssets(compute(S.ym)); });
+  // 자산 추이
+  const months=[...Array(12)].map((_,i)=>addM(ym,i-11)), names=[...new Set(months.flatMap(m=>Object.keys(balOf(m))).concat(accts.map(a=>a.name)))];
+  const col=i=>`hsl(${(i*67+190)%360} 42% 50%)`;
+  const data=months.map(m=>{ const b=balOf(m); return {m,parts:names.map(n=>Math.max(0,Number(b[n])||0)),tot:totalAssets(m)}; });
+  const mx=Math.max(1,...data.map(d=>d.parts.reduce((x,y)=>x+y,0)));
+  $("assetLegend").innerHTML=names.map((n,i)=>`<span><span class="dot" style="background:${col(i)}"></span>${esc(n)}</span>`).join("");
+  $("assetTrend").innerHTML=data.map(d=>{ const s=d.parts.reduce((x,y)=>x+y,0); return `<div class="col ${d.m===ym?'sel':''}" data-ym="${d.m}" title="${d.m} · ${d.tot==null?"미입력":won(d.tot)+"원"}"><div class="tot num">${d.tot?shortWon(d.tot):""}</div><div class="stack" style="height:${84*s/mx}%">${d.parts.map((v,i)=>v>0?`<span style="height:${100*v/s}%;background:${col(i)}"></span>`:"").reverse().join("")}</div></div>`; }).join("");
+  $("assetLabels").innerHTML=months.map(m=>`<div class="${m===ym?'on':''}">${m.slice(2).replace("-",".")}</div>`).join("");
+  $("assetTrend").querySelectorAll(".col").forEach(el=>el.onclick=()=>setYM(el.dataset.ym));
+  const withT=data.filter(d=>d.tot!=null); $("assetHint").textContent=withT.length>1?`${withT[0].m} 대비 ${(withT.at(-1).tot-withT[0].tot>=0?"+":"")+won(withT.at(-1).tot-withT[0].tot)}원`:"월말 잔액을 두 달 이상 입력하면 변화가 보여요";
+}
+function collectStash(){ document.querySelectorAll("[data-st]").forEach(el=>{ const s=stashDraft[+el.dataset.st], k=el.dataset.k; if(!s) return; s[k]=k==="done"?el.checked:k==="amount"?(parseNum(el.value)||0):el.value; }); }
+async function saveAssets(part){
+  if(!canWrite()) return; const row={ym:S.ym,updated_at:new Date().toISOString()};
+  if(part==="bal"){ const b={}; document.querySelectorAll("[data-bal]").forEach(el=>{ const v=parseNum(el.value); if(v!=null) b[el.dataset.bal]=v; }); row.balances=b; }
+  else { collectStash(); row.stash=stashDraft; }
+  try{ const {error}=await sb.from("months").upsert(row); if(error&&/balances|stash|column/i.test(error.message)){ toast("Supabase에서 schema_update_v3.sql을 먼저 실행해 주세요."); return; } errMsg(error);
+    toast(part==="bal"?`${S.ym} 잔액을 저장했어요.`:"저금통을 저장했어요."); stashYM=null; await loadMonths(); render(); }catch(_){}
 }
 async function saveMonth(e){
   e.preventDefault(); if(!canWrite()) return;
@@ -917,6 +1014,9 @@ function drawCfg(){
   const ac=$("addCat"); if(ac) ac.onclick=()=>{ collectCfg(); const t=catTarget(); let nm="새 분류",k=2; while(t[nm]) nm=`새 분류${k++}`; t[nm]=[]; drawCfg(); };
   const tc=$("catToCommon"); if(tc) tc.onclick=()=>{ collectCfg(); delete draft.pockets[S.catTab].cats; drawCfg(); };
   const mo=$("catMakeOwn"); if(mo) mo.onclick=()=>{ collectCfg(); const p=draft.pockets[S.catTab]; p.cats=JSON.parse(JSON.stringify(pocketCats(draft,p.name))); delete p.bigs; drawCfg(); };
+  if(!draft.accounts) draft.accounts=JSON.parse(JSON.stringify(DEFAULT_CFG.accounts));
+  $("cAcct").innerHTML=`<tr><th>통장 이름</th><th>역할</th><th class="c">저금통</th><th></th></tr>`+draft.accounts.map((x,i)=>`<tr><td><input data-ac="${i}" data-k="name" value="${esc(x.name)}" aria-label="통장 이름" ${ro}></td><td><input data-ac="${i}" data-k="role" value="${esc(x.role||"")}" aria-label="역할" ${ro}></td><td class="c"><input type="radio" name="stashAcct" data-ac="${i}" data-k="stash" ${x.stash?"checked":""} style="width:auto;height:auto;min-width:0" aria-label="저금통 통장" ${ro}></td><td class="writer-only"><button class="btn small danger" data-acdel="${i}">빼기</button></td></tr>`).join("");
+  $("cAcct").querySelectorAll("[data-acdel]").forEach(b=>b.onclick=()=>{ collectCfg(); draft.accounts.splice(+b.dataset.acdel,1); drawCfg(); });
   $("cPays").value=draft.pays.join(", "); $("cPays").readOnly=!canWrite();
   $("cFixed").querySelectorAll("[data-fdel]").forEach(b=>b.onclick=()=>{ collectCfg(); draft.fixed.splice(+b.dataset.fdel,1); drawCfg(); });
   $("cPocket").querySelectorAll("[data-pdel]").forEach(b=>b.onclick=()=>{ collectCfg(); draft.pockets.splice(+b.dataset.pdel,1); S.catTab=""; drawCfg(); });
@@ -930,6 +1030,7 @@ function collectCfg(){
     if(S.catTab===""||S.catTab==null) draft.cats=cats; else draft.pockets[S.catTab].cats=cats;
   }
   draft.pays=$("cPays").value.split(",").map(x=>x.trim()).filter(Boolean);
+  if(document.querySelector("[data-ac]")) document.querySelectorAll("[data-ac]").forEach(el=>{ const x=draft.accounts[+el.dataset.ac], k=el.dataset.k; if(!x) return; x[k]=k==="stash"?el.checked:el.value.trim(); });
 }
 // 추천 카테고리 (주머니 이름이 같을 때만 채움)
 const RECOMMEND={
@@ -1010,6 +1111,7 @@ function describeChange(o,n){
   nk.filter(x=>ok.includes(x)&&o.cats[x].join()!==n.cats[x].join()).forEach(x=>out.push(`${x} 소분류`));
   if(JSON.stringify(o.fixed)!==JSON.stringify(n.fixed)) out.push("고정비");
   if(o.pays.join()!==n.pays.join()) out.push("결제수단");
+  if(JSON.stringify(o.accounts||null)!==JSON.stringify(n.accounts||null)) out.push("통장");
   return out.slice(0,6).join(", ")+(out.length>6?" 외":"");
 }
 async function newVersion(){
@@ -1228,7 +1330,11 @@ $("flTo").addEventListener("change",e=>{ if(e.target.value){ S.txTo=e.target.val
 document.querySelectorAll("[data-q]").forEach(b=>b.onclick=()=>quickRange(b.dataset.q));
 document.querySelectorAll("[data-tm]").forEach(b=>b.onclick=()=>{ S.trendMode=b.dataset.tm; saveTrend(); renderTrend(); });
 $("trendPocket").onchange=e=>{ S.trendPocket=e.target.value; saveTrend(); renderTrend(); };
-$("mForm").onsubmit=saveMonth; $("cfgSave").onclick=saveCfg; $("newVer").onclick=newVersion; $("cfgReset").onclick=()=>{ renderCfg(); $("cfgMsg").textContent="저장된 상태로 되돌렸어요."; }; $("delVer").onclick=delVersion;
+$("mForm").onsubmit=saveMonth;
+$("saveBal").onclick=()=>saveAssets("bal"); $("saveStash").onclick=()=>saveAssets("stash");
+$("addStash").onclick=()=>{ collectStash(); stashDraft.push({src:"기타",amount:0,memo:"",done:false}); renderAssets(compute(S.ym)); };
+$("copyBal").onclick=()=>{ const p=balOf(addM(S.ym,-1)); document.querySelectorAll("[data-bal]").forEach(el=>{ const v=p[el.dataset.bal]; if(v!=null&&!el.value) el.value=won(v); }); toast("지난달 잔액을 불러왔어요. 바뀐 통장만 고치고 저장하세요."); };
+$("addAcct").onclick=()=>{ collectCfg(); draft.accounts.push({name:"새 통장",role:""}); drawCfg(); }; $("cfgSave").onclick=saveCfg; $("newVer").onclick=newVersion; $("cfgReset").onclick=()=>{ renderCfg(); $("cfgMsg").textContent="저장된 상태로 되돌렸어요."; }; $("delVer").onclick=delVersion;
 $("addFixed").onclick=()=>{ collectCfg(); draft.fixed.push({name:"",small:Object.values(cfgAllCats(draft)).flat()[0]||"",amount:0,day:1,cycle:"monthly"}); drawCfg(); };
 $("catRecommend").onclick=applyRecommend;
 $("addPocket").onclick=()=>{ collectCfg(); draft.pockets.push({name:"새 주머니",deduct:false,ratio:0}); drawCfg(); };
