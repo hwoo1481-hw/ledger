@@ -828,7 +828,8 @@ async function saveTx(e){
   const amount=parseNum($("fAmt").value), date=$("fDate").value;
   if(!date) return toast("날짜를 입력하세요."); if(!amount) return toast("금액을 입력하세요.");
   const kind=$("fRefKind").value, refund=kind?(parseNum($("fRef").value)||0):0;
-  if(kind&&refund>=amount) return toast("돌려받을 금액이 결제 금액보다 크거나 같아요.");
+  if(kind==="dutch"&&refund>=amount) return toast("더치페이는 내 몫이 남아야 해서, 받을 금액이 결제 금액보다 작아야 해요.");
+  if(kind&&refund>amount) return toast("돌려받을 금액이 결제 금액보다 커요.");
   const t={refundKind:kind,date,ym:ymOf(date),pocket:$("fPocket").value,big:$("fBig").value,small:$("fSmall").value,memo:$("fMemo").value.trim(),pay:$("fPay").value,amount,refund,refundDone:refund>0&&$("fRefDone").checked,refundOn:$("fRefOn").value||null};
   $("fSave").disabled=true;
   try{
@@ -854,7 +855,7 @@ function syncRefUI(){
   $("fRefLabel").textContent=k==="dutch"?"친구들에게 받을 금액":k==="wife"?"와이프에게 받을 금액":"환급예정액";
   $("fRefDoneLabel").textContent=k==="dutch"?"다 받음":k==="wife"?"받음":"환급 받음";
   $("fRefOnWrap").hidden=!k||!$("fRefDone").checked||!S.hasRefundOn;
-  if(k==="welfare"&&!parseNum($("fRef").value)) $("fRef").value=$("fAmt").value;   // 복지카드는 보통 전액 환급
+  if((k==="welfare"||k==="wife")&&!parseNum($("fRef").value)) $("fRef").value=$("fAmt").value;   // 복지카드·생활비환급은 보통 전액
 }
 
 /* ---------- 내역 메모 자동 추천 ---------- */
