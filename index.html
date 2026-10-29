@@ -219,6 +219,8 @@ table.cmp td,table.cmp th{white-space:nowrap}
 .sugpill{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;text-align:left;border:1px dashed var(--accent);background:var(--accent-soft);border-radius:8px;padding:7px 10px;font-size:13px}
 .sugpill small{color:var(--muted);font-size:11.5px}
 .sugpill span{margin-left:auto;color:var(--accent);font-weight:600;font-size:12px}
+#tStash select{min-width:112px}
+tr.cur td{background:var(--accent-soft)}
 </style>
 </head>
 <body>
@@ -375,11 +377,16 @@ table.cmp td,table.cmp th{white-space:nowrap}
         <div class="btns writer-only"><button class="btn primary small" id="saveBal">잔액 저장</button><button class="btn small" id="copyBal">지난달 잔액 불러오기</button></div>
       </div>
       <div class="panel">
-        <div class="phead"><h2>저금통 (파킹통장)</h2><span class="hint" id="stashHint"></span></div>
+        <div class="phead"><h2>저금통 (저금 · 파킹통장)</h2><span class="hint" id="stashHint"></span></div>
         <div class="stashsug" id="stashSug"></div>
         <div class="scroll tbl-in"><table id="tStash"></table></div>
         <div class="btns writer-only"><button class="btn small" id="addStash">+ 직접 추가</button><button class="btn primary small" id="saveStash">저금통 저장</button></div>
       </div>
+    </div>
+    <div class="panel">
+      <div class="phead"><h2>용돈통 (남은 용돈)</h2><span class="hint" id="allowHint"></span></div>
+      <p class="hint" style="margin:0">매달 용돈+식사비에서 개인 지출을 쓰고 남은 돈이 쌓여요. 저금통(저금)과는 따로 관리돼요.</p>
+      <div class="scroll"><table id="tAllow"></table></div>
     </div>
     <div class="panel">
       <div class="phead"><h2>자산 추이 (최근 12개월)</h2><span class="hint" id="assetHint"></span></div>
@@ -479,7 +486,7 @@ table.cmp td,table.cmp th{white-space:nowrap}
       <div class="btns writer-only"><span id="catActions" class="btns"></span><button class="btn small" id="catRecommend" title="고정비/개인/생활·데이트 주머니에 추천 카테고리를 채워요">추천 카테고리 채우기</button></div>
     </div>
     <div class="panel">
-      <div class="phead"><h2>통장</h2><span class="hint">자산 관리 탭에서 월말 잔액을 적을 통장 · 저금통 통장 1개 지정</span></div>
+      <div class="phead"><h2>통장</h2><span class="hint">자산 관리 탭에서 월말 잔액을 적을 통장 · 저금통·용돈통 통장 지정</span></div>
       <div class="scroll tbl-in"><table id="cAcct"></table></div>
       <div class="btns writer-only"><button class="btn small" id="addAcct">+ 통장 추가</button></div>
     </div>
@@ -515,7 +522,7 @@ const DEFAULT_CFG = {
   cats:{"주거":["월세","대출이자","가스·관리비"],"고정지출":["통신비","보험료","구독료","적금","세금"],"식비":["회사점심","회사저녁","집밥·식재료","외식·배달","술"],"카페간식":["카페","간식"],"교통":["교통비","주유","주차"],"경조사":["선물","기념일","명절·행사","경조사비"],"생활쇼핑":["의류","가전·전자","미용","생활용품"],"건강":["병원","약"],"여가":["게임","영화·공연","놀이","사진"],"자기계발":["자격증·교육","도서"],"기타":["로또","기타"]},
   pays:["국민체크카드","삼성신용카드","롯데신용카드","국민신용카드(복지)","신한체크교통카드","네이버페이","카카오페이","계좌이체","현금"],
   defaults:{allowance:200000,mealUnit:8000},
-  accounts:[{name:"국민(주거래)",role:"월급·고정비·비상금 100만"},{name:"국민(적금)",role:"적금 월 50만"},{name:"우리",role:"용돈·식사비"},{name:"수협(파킹)",role:"저금통",stash:true}]
+  accounts:[{name:"국민(주거래)",role:"월급·고정비·비상금 100만"},{name:"국민(적금)",role:"적금 월 50만"},{name:"우리",role:"용돈·식사비",allow:true},{name:"수협(파킹)",role:"저금통",stash:true}]
 };
 const S = { cfg:DEFAULT_CFG, versions:[], editVer:null, tx:[], months:{}, notes:{}, ym:ymOf(todayStr()), tab:"dash", editId:null, role:null,
   trendMode:"pocket", trendSel:{pocket:null,cat:null}, txFrom:null, txTo:null };
@@ -911,6 +918,9 @@ const balOf = ym => (S.months[ym]?.balances)||{};
 const stashOf = ym => (S.months[ym]?.stash)||[];
 function totalAssets(ym){ const b=balOf(ym); const vals=Object.values(b).filter(v=>v!=null); return vals.length?vals.reduce((x,y)=>x+Number(y),0):null; }
 function stashAcct(ym){ return accountsFor(ym).find(a=>a.stash)?.name; }
+function allowAcct(ym){ return accountsFor(ym).find(a=>a.allow)?.name; }
+// 용돈통: 월별 입력을 한 달부터 매달 '남은 개인예산'(용돈+식사비 − 개인·차감 지출)을 쌓음
+function allowanceHistory(ym){ return Object.keys(S.months).filter(k=>k<=ym&&(S.months[k].salary!=null||S.months[k].workdays!=null)).sort().map(k=>{ for(const x in _bal) delete _bal[x]; const c=compute(k); return {ym:k,budget:c.budget,used:c.used,left:c.remain}; }); }
 // 고정비 차액: 매월 고정비 중 이번 달 낸 항목의 (예정 − 실제). 부정기(가스비 등)는 다음 청구 대비로 제외
 function fixedSaving(c){ return c.fixed.filter(f=>f.cycle!=="flex"&&f.paid>0&&(Number(f.amount)||0)>f.paid).map(f=>({name:f.name,diff:(Number(f.amount)||0)-f.paid})); }
 let stashDraft=null, stashYM=null;
@@ -919,11 +929,16 @@ function renderAssets(c){
   const tot=totalAssets(ym), ptot=totalAssets(addM(ym,-1)), sa=stashAcct(ym);
   const stashTotal=Object.keys(S.months).filter(k=>k<=ym).reduce((x,k)=>x+stashOf(k).filter(s=>s.done).reduce((y,s)=>y+(Number(s.amount)||0),0),0);
   const stashMonth=stashOf(ym).filter(s=>s.done).reduce((y,s)=>y+(Number(s.amount)||0),0);
+  const aa=allowAcct(ym), allowSum=allowanceHistory(ym).reduce((x,h)=>x+h.left,0); for(const x in _bal) delete _bal[x];
   $("aKpis").innerHTML=
     kpi("총자산 (월말 통장 합계)", tot??0, tot==null?"아래에 이번 달 월말 잔액을 입력하세요":`${ym} 기준 · 통장 ${Object.keys(bal).length}개`, "hero") +
     kpi("지난달 대비", tot==null||ptot==null?0:tot-ptot, tot==null||ptot==null?"두 달 잔액이 있어야 계산돼요":`${won(ptot)} → ${won(tot)}`) +
     kpi("이번 달 남은 돈", c.m.salary==null?0:c.myLeft, c.m.salary==null?"월급 입력 필요":`내 수입 ${won(c.myIncome)} − 순지출 ${won(c.myNet)}`) +
-    kpi("저금통 누적", sa&&bal[sa]!=null?Number(bal[sa]):stashTotal, sa&&bal[sa]!=null?`${sa} 월말 잔액 · 이번 달 +${won(stashMonth)}`:`옮긴 금액 합계 · 이번 달 +${won(stashMonth)}`);
+    kpi("저금통 (저금)", sa&&bal[sa]!=null?Number(bal[sa]):stashTotal, sa&&bal[sa]!=null?`${sa} 월말 잔액 · 이번 달 +${won(stashMonth)}`:`옮긴 금액 합계 · 이번 달 +${won(stashMonth)}`) +
+    kpi("용돈통 (남은 용돈)", aa&&bal[aa]!=null?Number(bal[aa]):allowSum, `이번 달 ${c.remain>=0?"+":""}${won(c.remain)} · 누적 ${won(allowSum)}${aa?` · ${aa}`:""}`);
+  const ah=allowanceHistory(ym).slice(-6);
+  $("allowHint").textContent=aa?`${aa}에 그대로 쌓아 두세요`:"설정 → 통장에서 용돈통 통장을 지정하세요";
+  $("tAllow").innerHTML=ah.length?`<tr><th>월</th><th class="r">용돈+식사비</th><th class="r">개인 지출</th><th class="r">남은 용돈</th></tr>`+ah.map(h=>`<tr class="${h.ym===ym?"cur":""}"><td class="num">${h.ym}</td><td class="r num">${won(h.budget)}</td><td class="r num">${won(h.used)}</td><td class="r num ${h.left<0?"neg":""}"><b>${h.left>=0?"+":""}${won(h.left)}</b></td></tr>`).join("")+`<tr class="total"><td>누적</td><td></td><td></td><td class="r num">${won(allowSum)}</td></tr>`:`<tr><td class="empty">월별 입력(월급 또는 출근일수)을 넣으면 쌓이기 시작해요.</td></tr>`;
   $("aBalTitle").textContent=`${ym} 통장별 월말 잔액`;
   const ro=canWrite()?"":"disabled";
   if(!$("v-month").contains(document.activeElement)||stashYM!==ym){
@@ -1015,7 +1030,7 @@ function drawCfg(){
   const tc=$("catToCommon"); if(tc) tc.onclick=()=>{ collectCfg(); delete draft.pockets[S.catTab].cats; drawCfg(); };
   const mo=$("catMakeOwn"); if(mo) mo.onclick=()=>{ collectCfg(); const p=draft.pockets[S.catTab]; p.cats=JSON.parse(JSON.stringify(pocketCats(draft,p.name))); delete p.bigs; drawCfg(); };
   if(!draft.accounts) draft.accounts=JSON.parse(JSON.stringify(DEFAULT_CFG.accounts));
-  $("cAcct").innerHTML=`<tr><th>통장 이름</th><th>역할</th><th class="c">저금통</th><th></th></tr>`+draft.accounts.map((x,i)=>`<tr><td><input data-ac="${i}" data-k="name" value="${esc(x.name)}" aria-label="통장 이름" ${ro}></td><td><input data-ac="${i}" data-k="role" value="${esc(x.role||"")}" aria-label="역할" ${ro}></td><td class="c"><input type="radio" name="stashAcct" data-ac="${i}" data-k="stash" ${x.stash?"checked":""} style="width:auto;height:auto;min-width:0" aria-label="저금통 통장" ${ro}></td><td class="writer-only"><button class="btn small danger" data-acdel="${i}">빼기</button></td></tr>`).join("");
+  $("cAcct").innerHTML=`<tr><th>통장 이름</th><th>역할</th><th class="c">저금통</th><th class="c">용돈통</th><th></th></tr>`+draft.accounts.map((x,i)=>`<tr><td><input data-ac="${i}" data-k="name" value="${esc(x.name)}" aria-label="통장 이름" ${ro}></td><td><input data-ac="${i}" data-k="role" value="${esc(x.role||"")}" aria-label="역할" ${ro}></td><td class="c"><input type="radio" name="stashAcct" data-ac="${i}" data-k="stash" ${x.stash?"checked":""} style="width:auto;height:auto;min-width:0" aria-label="저금통 통장" ${ro}></td><td class="c"><input type="radio" name="allowAcct" data-ac="${i}" data-k="allow" ${x.allow?"checked":""} style="width:auto;height:auto;min-width:0" aria-label="용돈통 통장" ${ro}></td><td class="writer-only"><button class="btn small danger" data-acdel="${i}">빼기</button></td></tr>`).join("");
   $("cAcct").querySelectorAll("[data-acdel]").forEach(b=>b.onclick=()=>{ collectCfg(); draft.accounts.splice(+b.dataset.acdel,1); drawCfg(); });
   $("cPays").value=draft.pays.join(", "); $("cPays").readOnly=!canWrite();
   $("cFixed").querySelectorAll("[data-fdel]").forEach(b=>b.onclick=()=>{ collectCfg(); draft.fixed.splice(+b.dataset.fdel,1); drawCfg(); });
@@ -1030,7 +1045,7 @@ function collectCfg(){
     if(S.catTab===""||S.catTab==null) draft.cats=cats; else draft.pockets[S.catTab].cats=cats;
   }
   draft.pays=$("cPays").value.split(",").map(x=>x.trim()).filter(Boolean);
-  if(document.querySelector("[data-ac]")) document.querySelectorAll("[data-ac]").forEach(el=>{ const x=draft.accounts[+el.dataset.ac], k=el.dataset.k; if(!x) return; x[k]=k==="stash"?el.checked:el.value.trim(); });
+  if(document.querySelector("[data-ac]")) document.querySelectorAll("[data-ac]").forEach(el=>{ const x=draft.accounts[+el.dataset.ac], k=el.dataset.k; if(!x) return; x[k]=(k==="stash"||k==="allow")?el.checked:el.value.trim(); });
 }
 // 추천 카테고리 (주머니 이름이 같을 때만 채움)
 const RECOMMEND={
