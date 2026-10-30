@@ -274,11 +274,7 @@ th.r .sorth{justify-content:flex-end}
   <section class="view" id="v-dash">
     <div class="panel trendpanel">
       <div class="phead"><h2>최근 12개월 추이</h2>
-        <div class="btns"><select id="trendPocket" class="vsel" aria-label="카테고리 볼 주머니" hidden></select>
-        <div class="seg" role="group" aria-label="추이 기준">
-          <button type="button" data-tm="pocket" aria-pressed="true">주머니별</button>
-          <button type="button" data-tm="cat" aria-pressed="false">카테고리별</button>
-        </div></div>
+        <div class="btns"><select id="trendPocket" class="vsel" aria-label="볼 주머니"></select></div>
       </div>
       <div class="chips" id="trendChips"></div>
       <div class="trend" id="trend"></div>
@@ -310,7 +306,7 @@ th.r .sorth{justify-content:flex-end}
     </div>
     <div class="grid2">
       <div class="panel">
-        <div class="phead"><h2>결제수단별</h2></div>
+        <div class="phead"><h2>결제수단별</h2><div class="btns"><span class="hint" id="payHint"></span><select id="payPocket" class="vsel" aria-label="결제수단 볼 주머니"></select></div></div>
         <div class="scroll"><table id="tPay"></table></div>
       </div>
       <div class="panel">
@@ -538,7 +534,7 @@ const DEFAULT_CFG = {
 };
 const S = { cfg:DEFAULT_CFG, versions:[], editVer:null, tx:[], months:{}, notes:{}, ym:ymOf(todayStr()), tab:"dash", editId:null, role:null,
   txSort:{key:"date",dir:"desc"}, trendMode:"pocket", trendSel:{pocket:null,cat:null}, txFrom:null, txTo:null };
-try { const t=localStorage.getItem("lg.tab"); if(t) S.tab=t; const so=JSON.parse(localStorage.getItem("lg.sort")||"null"); if(so&&so.key) S.txSort=so; S.catPocket=localStorage.getItem("lg.catPocket")||""; const tr=JSON.parse(localStorage.getItem("lg.trend")||"null"); if(tr){ S.trendMode=tr.mode||"pocket"; S.trendSel=tr.sel||S.trendSel; S.trendPocket=tr.pocket||""; } } catch(e){}
+try { const t=localStorage.getItem("lg.tab"); if(t) S.tab=t; const so=JSON.parse(localStorage.getItem("lg.sort")||"null"); if(so&&so.key) S.txSort=so; S.catPocket=localStorage.getItem("lg.catPocket")||""; S.payPocket=localStorage.getItem("lg.payPocket")||""; const tr=JSON.parse(localStorage.getItem("lg.trend")||"null"); if(tr){ S.trendMode=tr.mode||"pocket"; S.trendSel=tr.sel||S.trendSel; S.trendPocket=tr.pocket||""; } } catch(e){}
 const fmtD = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 const monthRange = ym => { const [y,m]=ym.split("-").map(Number); return [`${ym}-01`,`${ym}-${pad(new Date(y,m,0).getDate())}`]; };
 const shortWon = n => { const v=Math.abs(n); if(v>=1e8) return (n/1e8).toFixed(1).replace(/\.0$/,"")+"억"; if(v>=1e4) return Math.round(n/1e4).toLocaleString("ko-KR")+"만"; return won(n); };
@@ -717,7 +713,14 @@ function renderDash(c){
     ["식사비 받을 금액",(c.m.workdays||0)*(c.m.mealUnit||0),`${c.m.workdays||0}일 × ${won(c.m.mealUnit)}`],["식사비 받은 금액",c.m.mealIn,""]]
     .map(([a,b,n,s])=>`<tr${s?' class="total"':''}><td>${a}</td><td class="r num">${b==null?'<span style="color:var(--faint)">미입력</span>':won(b)}</td><td style="color:var(--faint);font-size:12px">${n}</td></tr>`).join("");
   renderTrend();
-  $("tPay").innerHTML=c.pays.length?`<tr><th>결제수단</th><th class="r">금액</th><th class="r">건수</th></tr>`+c.pays.sort((a,b)=>b.amt-a.amt).map(p=>`<tr><td>${esc(p.pay)}</td><td class="r num">${won(p.amt)}</td><td class="r num">${p.n}</td></tr>`).join(""):`<tr><td colspan="3" class="empty">이 달 기록이 없어요.</td></tr>`;
+  // 결제수단별: 주머니 선택 가능 (카드 실적은 결제 전액 기준)
+  if(S.payPocket&&!cpNames.includes(S.payPocket)) S.payPocket="";
+  $("payPocket").innerHTML=`<option value="">전체 주머니</option>`+cpNames.map(n=>`<option ${n===S.payPocket?"selected":""}>${esc(n)}</option>`).join("");
+  const ptx=S.payPocket?c.txs.filter(t=>t.pocket===S.payPocket):c.txs, pmap=new Map();
+  ptx.forEach(t=>{ const e=pmap.get(t.pay)||{pay:t.pay,amt:0,n:0,ref:0}; e.amt+=t.amount; e.n++; e.ref+=t.refund; pmap.set(t.pay,e); });
+  const pays=[...pmap.values()].sort((a,b)=>b.amt-a.amt), psum=pays.reduce((x,p)=>x+p.amt,0);
+  $("payHint").textContent=`합계 ${won(psum)}원`;
+  $("tPay").innerHTML=pays.length?`<tr><th>결제수단</th><th class="r">결제 금액</th><th class="r">돌려받을 돈</th><th class="r">건수</th></tr>`+pays.map(p=>`<tr><td>${esc(p.pay||"(없음)")}</td><td class="r num">${won(p.amt)}</td><td class="r num" style="color:var(--muted)">${p.ref?won(p.ref):"-"}</td><td class="r num">${p.n}</td></tr>`).join(""):`<tr><td colspan="4" class="empty">${S.payPocket?`이 달 '${esc(S.payPocket)}' 기록이 없어요.`:"이 달 기록이 없어요."}</td></tr>`;
   const pl=[...pend].sort((a,b)=>a.date<b.date?-1:1);
   $("tRefund").innerHTML=pl.length?`<tr><th>날짜</th><th>내역</th><th class="r">환급예정</th><th class="c writer-only"></th></tr>`+pl.map(t=>`<tr><td class="num" style="white-space:nowrap">${t.date.slice(2)}<br><small style="color:var(--faint)">${Math.max(0,Math.round((new Date(todayStr())-new Date(t.date))/864e5))}일째</small></td><td>${refTag(t)}${esc(t.memo||t.small)}<br><small style="color:var(--faint)">${esc(t.pay)}</small></td><td class="r num">${won(t.refund)}</td><td class="c writer-only"><button class="btn small" data-ref="${t.id}">받음</button></td></tr>`).join(""):`<tr><td colspan="4" class="empty">받을 환급이 없어요.</td></tr>`;
   $("tRefund").querySelectorAll("[data-ref]").forEach(b=>b.onclick=()=>markRefund(b.dataset.ref,true));
@@ -731,7 +734,8 @@ function trendSeries(){
   if(S.trendMode==="cat"){ const tp=S.trendPocket||"";
     const cur=Object.keys(tp?pocketCats(cfgFor(S.ym),tp):cfgAllCats(cfgFor(S.ym)));
     const usedP=k=>S.tx.some(t=>inWin.has(t.ym)&&t.big===k&&(!tp||t.pocket===tp));
-    const keys=[...cur.filter(k=>!tp||true),...allCatNames().filter(k=>!cur.includes(k)&&usedP(k))].filter(k=>cur.includes(k)||usedP(k));
+    const own=tp&&(cfgFor(S.ym).pockets.find(p=>p.name===tp)?.cats);   // 전용 카테고리가 없는 주머니는 실제로 쓴 대분류만
+    const keys=[...cur.filter(k=>own||!tp||usedP(k)),...allCatNames().filter(k=>!cur.includes(k)&&usedP(k))];
     return keys.map(k=>({key:k,color:catColor(k),get:t=>t.big===k&&(!tp||t.pocket===tp)})); }
   const cur=cfgFor(S.ym).pockets.map(p=>p.name);
   return allPocketNames().filter(k=>cur.includes(k)||used(k)).map(k=>({key:k,color:pColor(k),get:t=>t.pocket===k}));
@@ -739,8 +743,7 @@ function trendSeries(){
 const trendKey = () => S.trendMode==="cat"?`cat:${S.trendPocket||""}`:"pocket";
 function saveTrend(){ try{ localStorage.setItem("lg.trend",JSON.stringify({mode:S.trendMode,sel:S.trendSel,pocket:S.trendPocket||""})); }catch(e){} }
 function renderTrend(){
-  document.querySelectorAll("[data-tm]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.tm===S.trendMode)));
-  const tpEl=$("trendPocket"); tpEl.hidden=S.trendMode!=="cat";
+  S.trendMode="cat"; const tpEl=$("trendPocket");
   const tpNames=cfgFor(S.ym).pockets.map(p=>p.name);
   if(S.trendPocket&&!tpNames.includes(S.trendPocket)&&!S.tx.some(t=>t.pocket===S.trendPocket)) S.trendPocket="";
   tpEl.innerHTML=`<option value="">전체 주머니</option>`+tpNames.map(n=>`<option ${n===S.trendPocket?"selected":""}>${esc(n)}</option>`).join("");
@@ -1411,7 +1414,8 @@ $("tList").addEventListener("click",e=>{ const b=e.target.closest("[data-sort]")
 $("flFrom").addEventListener("change",e=>{ if(e.target.value){ S.txFrom=e.target.value; render(); } });
 $("flTo").addEventListener("change",e=>{ if(e.target.value){ S.txTo=e.target.value; render(); } });
 document.querySelectorAll("[data-q]").forEach(b=>b.onclick=()=>quickRange(b.dataset.q));
-document.querySelectorAll("[data-tm]").forEach(b=>b.onclick=()=>{ S.trendMode=b.dataset.tm; saveTrend(); renderTrend(); });
+
+$("payPocket").onchange=e=>{ S.payPocket=e.target.value; try{localStorage.setItem("lg.payPocket",S.payPocket)}catch(_){} render(); };
 $("catPocket").onchange=e=>{ S.catPocket=e.target.value; try{localStorage.setItem("lg.catPocket",S.catPocket)}catch(_){} render(); };
 $("trendPocket").onchange=e=>{ S.trendPocket=e.target.value; saveTrend(); renderTrend(); };
 $("mForm").onsubmit=saveMonth;
