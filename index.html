@@ -672,20 +672,21 @@ function kpi(label,val,sub,cls="",meter=null){
 }
 const aiHtml = t => esc(t).split(/\n+/).filter(Boolean).map(l=>`<p>${l}</p>`).join("");
 function renderDash(c){
-  const pend=S.tx.filter(t=>t.refund>0&&!t.refundDone), pendSum=pend.reduce((a,t)=>a+t.refund,0);
-  const unpaid=c.fixed.filter(f=>f.status==="미납").length;
+  // 돌려받을 돈(대기): 복지·교통 환급 + 더치페이만 (와이프에게 받을 돈은 옆 카드에서 따로)
+  const pend=S.tx.filter(t=>t.refund>0&&!t.refundDone&&!isWifeRef(t)), pendSum=pend.reduce((a,t)=>a+t.refund,0), pendD=pend.filter(isDutch).reduce((a,t)=>a+t.refund,0);
+  // 와이프에게 받을 금액 = 주머니 정산(생활·데이트 등) + 이번 달 생활비환급 대기 − 정산 받은 돈
+  const wifeRef=c.txs.filter(t=>isWifeRef(t)&&!t.refundDone).reduce((a,t)=>a+t.refund,0), wifeTotal=c.settle+wifeRef, wifeLeft=wifeTotal-(c.m.settleIn||0);
+  // 고정비: 예정 − 납부 = 남은 돈 (아직 낼 것 + 덜 나온 차액)
+  const unpaidItems=c.fixed.filter(f=>f.status==="미납"), toPay=unpaidItems.reduce((a,f)=>a+(Number(f.amount)||0),0), saved=fixedSaving(c).reduce((a,f)=>a+f.diff,0);
+  const fixLeft=c.fixedPlan-c.fixedPaid, flexKeep=c.fixed.filter(f=>f.status==="청구 없음").reduce((a,f)=>a+(Number(f.amount)||0),0);
   const msgs=[];
   if (!c.m.workdays) msgs.push("출근일수가 없어 식사비 예산이 0원으로 계산돼요.");
   if (c.bal.openSrc==="미입력") msgs.push("첫 달 월초 잔액이 비어 있어요.");
-  const settleBase=c.pockets.filter(p=>p.ratio>0).map(p=>`${p.name} ${won(p.settle)}${p.gross?"":"(환급 제외)"}`).join(" · ");
   $("kpis").innerHTML =
     kpi(c.remain<0?"개인예산 초과":"남은 개인예산", c.remain, `예산 ${won(c.budget)} · 사용 ${won(c.used)}`, "hero", c.budget?100*Math.max(0,c.remain)/c.budget:0) +
-    kpi("고정비 납부", c.fixedPaid, unpaid?`예정 ${won(c.fixedPlan)} · <b style="color:var(--bad)">미납 ${unpaid}건</b>`:`예정 ${won(c.fixedPlan)} · 미납 없음`) +
-    kpi("와이프에게 받을 금액", c.settleLeft, `${settleBase||"-"} · 받은 ${won(c.m.settleIn||0)}`) +
-    kpi("돌려받을 돈 (대기)", pendSum, (()=>{ const s=f=>pend.filter(f).reduce((x,t)=>x+t.refund,0), d=s(isDutch), w=s(isWifeRef); return `복지·교통 ${won(pendSum-d-w)} · 와이프 ${won(w)} · 더치 ${won(d)}`; })()) +
-    (c.m.salary==null
-      ? kpi("이번 달 남은 돈", 0, `월급을 입력하면 계산돼요 · 순지출 ${won(c.myNet)}`)
-      : kpi("이번 달 남은 돈", c.myLeft, `내 수입 ${won(c.myIncome)} − 순지출 ${won(c.myNet)}${c.pendRef?` · 아직 안 들어온 환급 ${won(c.pendRef)} 포함`:""}`, "", c.myIncome>0?100*Math.max(0,c.myLeft)/c.myIncome:0));
+    kpi("고정비 남은 돈", fixLeft, `예정 ${won(c.fixedPlan)} · 납부 ${won(c.fixedPaid)}<br>${unpaidItems.length?`<b style="color:var(--bad)">아직 낼 것 ${won(toPay)} (${unpaidItems.length}건)</b>`:"미납 없음"}${saved>0?` · 덜 나온 차액 ${won(saved)}`:""}${flexKeep?` · 부정기 대비 ${won(flexKeep)}`:""}`, "", c.fixedPlan?100*Math.max(0,c.fixedPaid)/c.fixedPlan:0) +
+    kpi("와이프에게 받을 금액", wifeLeft, `${c.pockets.filter(p=>p.settle).map(p=>`${p.name} ${won(p.settle)}`).join(" · ")||"주머니 정산 0"}${wifeRef?` · 생활비환급 ${won(wifeRef)}`:""} · 받은 ${won(c.m.settleIn||0)}`) +
+    kpi("돌려받을 돈 (대기)", pendSum, `복지·교통 ${won(pendSum-pendD)} · 더치페이 ${won(pendD)} · 전체 기간 ${pend.length}건`);
   $("globalMsg").innerHTML=(S.tab==="dash"&&msgs.length&&canWrite())?`<div class="banner" style="margin-top:16px">${msgs.join(" ")} <a href="#" id="goMonth" style="color:var(--accent);font-weight:600">월별 정산에서 입력 →</a></div>`:"";
   const gm=$("goMonth"); if(gm) gm.onclick=e=>{e.preventDefault();setTab("month")};
   const note=S.notes[`${S.ym}~${S.ym}`];
@@ -769,7 +770,7 @@ function renderTrend(){
   $("trendLabels").innerHTML=data.map(d=>`<div class="${d.ym===S.ym?'on':''}">${d.ym.slice(2).replace("-",".")}</div>`).join("");
   $("trend").querySelectorAll(".col").forEach(el=>el.onclick=()=>setYM(el.dataset.ym));
   const withData=data.filter(d=>d.tot>0), avg=withData.length?withData.reduce((x,d)=>x+d.tot,0)/withData.length:0;
-  $("trendHint").textContent=`${active.length===ser.length?"전체":active.map(s=>s.key).join("·")} · 기록 있는 달 평균 ${won(avg)}원 · 막대를 누르면 그 달로 이동`;
+  $("trendHint").textContent=`${S.trendPocket||"전체 주머니"} · ${active.length===ser.length?"모든 대분류":active.map(s=>s.key).join("·")} · 기록 있는 달 평균 ${won(avg)}원 · 막대를 누르면 그 달로 이동`;
 }
 
 /* ---------- 내역 ---------- */
