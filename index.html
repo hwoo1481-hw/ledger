@@ -229,6 +229,7 @@ th.r .sorth{justify-content:flex-end}
 .sorth.on{color:var(--ink);font-weight:600}
 .sorth.on span{opacity:1;color:var(--accent)}
 .sorth:hover{color:var(--ink)}
+.bar .barsub{grid-column:2/4;margin-top:-4px;font-size:11px;color:var(--muted);line-height:1.4}
 </style>
 </head>
 <body>
@@ -299,7 +300,7 @@ th.r .sorth{justify-content:flex-end}
         <div class="scroll"><table id="tFixed"></table></div>
       </div>
       <div class="panel">
-        <div class="phead"><h2>카테고리별 실부담</h2><span class="hint" id="catHint"></span></div>
+        <div class="phead"><h2>카테고리별 실부담</h2><div class="btns"><span class="hint" id="catHint"></span><select id="catPocket" class="vsel" aria-label="카테고리 볼 주머니"></select></div></div>
         <div class="bars" id="cats"></div>
       </div>
       <div class="panel">
@@ -537,7 +538,7 @@ const DEFAULT_CFG = {
 };
 const S = { cfg:DEFAULT_CFG, versions:[], editVer:null, tx:[], months:{}, notes:{}, ym:ymOf(todayStr()), tab:"dash", editId:null, role:null,
   txSort:{key:"date",dir:"desc"}, trendMode:"pocket", trendSel:{pocket:null,cat:null}, txFrom:null, txTo:null };
-try { const t=localStorage.getItem("lg.tab"); if(t) S.tab=t; const so=JSON.parse(localStorage.getItem("lg.sort")||"null"); if(so&&so.key) S.txSort=so; const tr=JSON.parse(localStorage.getItem("lg.trend")||"null"); if(tr){ S.trendMode=tr.mode||"pocket"; S.trendSel=tr.sel||S.trendSel; S.trendPocket=tr.pocket||""; } } catch(e){}
+try { const t=localStorage.getItem("lg.tab"); if(t) S.tab=t; const so=JSON.parse(localStorage.getItem("lg.sort")||"null"); if(so&&so.key) S.txSort=so; S.catPocket=localStorage.getItem("lg.catPocket")||""; const tr=JSON.parse(localStorage.getItem("lg.trend")||"null"); if(tr){ S.trendMode=tr.mode||"pocket"; S.trendSel=tr.sel||S.trendSel; S.trendPocket=tr.pocket||""; } } catch(e){}
 const fmtD = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 const monthRange = ym => { const [y,m]=ym.split("-").map(Number); return [`${ym}-01`,`${ym}-${pad(new Date(y,m,0).getDate())}`]; };
 const shortWon = n => { const v=Math.abs(n); if(v>=1e8) return (n/1e8).toFixed(1).replace(/\.0$/,"")+"억"; if(v>=1e4) return Math.round(n/1e4).toLocaleString("ko-KR")+"만"; return won(n); };
@@ -700,9 +701,17 @@ function renderDash(c){
   $("fixHint").textContent=`예정 합계 ${won(c.fixedPlan)}원`;
   $("tFixed").innerHTML=`<tr><th>항목</th><th class="c">납부일</th><th class="r">예정</th><th class="r">납부</th><th class="c">상태</th></tr>`+
     c.fixed.map(f=>`<tr><td>${esc(f.name)}${f.cycle==="flex"?' <small style="color:var(--faint)">부정기</small>':""}</td><td class="c num">${f.day?f.day+"일":"-"}</td><td class="r num">${won(f.amount)}</td><td class="r num">${won(f.paid)}${f.months>1?`<br><small style="color:var(--faint)">약 ${f.months}개월분</small>`:""}</td><td class="c">${f.status==="완료"?'<span class="pill ok">완료</span>':f.status==="미납"?'<span class="pill no">미납</span>':f.status==="청구 없음"?'<span class="pill mute">청구 없음</span>':'<span class="pill mute">-</span>'}</td></tr>`).join("");
-  const cs=[...c.cats].sort((a,b)=>b.net-a.net), mx=Math.max(1,...cs.map(x=>x.net));
-  $("catHint").textContent=`합계 ${won(c.net)}원`;
-  $("cats").innerHTML=cs.some(x=>x.net)?cs.filter(x=>x.net).map(x=>`<div class="bar"><span>${esc(x.big)}</span><div class="track"><i style="width:${100*x.net/mx}%"></i></div><span class="v num">${won(x.net)}</span></div>`).join(""):`<div class="empty">이 달 지출이 아직 없어요.</div>`;
+  // 카테고리별: 주머니 선택 시 그 주머니 지출만, 대분류 아래에 소분류 내역 표시
+  const cpNames=c.pockets.filter(p=>p.count||!p.legacy).map(p=>p.name);
+  if(S.catPocket&&!cpNames.includes(S.catPocket)) S.catPocket="";
+  $("catPocket").innerHTML=`<option value="">전체 주머니</option>`+cpNames.map(n=>`<option ${n===S.catPocket?"selected":""}>${esc(n)}</option>`).join("");
+  const ctx=S.catPocket?c.txs.filter(t=>t.pocket===S.catPocket):c.txs, netOf=t=>t.amount-t.refund;
+  const cmap=new Map(); ctx.forEach(t=>{ const e=cmap.get(t.big)||{big:t.big,net:0,sm:new Map()}; e.net+=netOf(t); e.sm.set(t.small,(e.sm.get(t.small)||0)+netOf(t)); cmap.set(t.big,e); });
+  const cs=[...cmap.values()].filter(x=>x.net).sort((a,b)=>b.net-a.net), mx=Math.max(1,...cs.map(x=>x.net)), csum=cs.reduce((x,y)=>x+y.net,0);
+  $("catHint").textContent=`합계 ${won(csum)}원`;
+  $("cats").innerHTML=cs.length?cs.map(x=>{ const sm=[...x.sm.entries()].filter(([,v])=>v).sort((a,b)=>b[1]-a[1]);
+    const smTxt=sm.length>1||(sm[0]&&sm[0][0]!==x.big)?sm.map(([k,v])=>`${esc(k)} ${shortWon(v)}`).join(" · "):"";
+    return `<div class="bar"><span>${esc(x.big)}</span><div class="track"><i style="width:${100*x.net/mx}%"></i></div><span class="v num">${won(x.net)}</span>${smTxt?`<small class="barsub">${smTxt}</small>`:""}</div>`; }).join(""):`<div class="empty">${S.catPocket?`이 달 '${esc(S.catPocket)}' 지출이 없어요.`:"이 달 지출이 아직 없어요."}</div>`;
   $("tAlloc").innerHTML=[["월급",c.m.salary,""],["(−) 용돈",c.m.allowance,""],["(−) 고정비 예정",c.fixedPlan,"설정 합계"],["와이프 송금 권장",c.wifeRec,"",true],
     ["와이프 송금 실제",c.m.toWife,c.wifeRec!=null&&c.m.toWife!=null&&c.m.toWife!==c.wifeRec?`권장과 ${won(c.m.toWife-c.wifeRec)} 차이`:""],
     ["식사비 받을 금액",(c.m.workdays||0)*(c.m.mealUnit||0),`${c.m.workdays||0}일 × ${won(c.m.mealUnit)}`],["식사비 받은 금액",c.m.mealIn,""]]
@@ -1403,6 +1412,7 @@ $("flFrom").addEventListener("change",e=>{ if(e.target.value){ S.txFrom=e.target
 $("flTo").addEventListener("change",e=>{ if(e.target.value){ S.txTo=e.target.value; render(); } });
 document.querySelectorAll("[data-q]").forEach(b=>b.onclick=()=>quickRange(b.dataset.q));
 document.querySelectorAll("[data-tm]").forEach(b=>b.onclick=()=>{ S.trendMode=b.dataset.tm; saveTrend(); renderTrend(); });
+$("catPocket").onchange=e=>{ S.catPocket=e.target.value; try{localStorage.setItem("lg.catPocket",S.catPocket)}catch(_){} render(); };
 $("trendPocket").onchange=e=>{ S.trendPocket=e.target.value; saveTrend(); renderTrend(); };
 $("mForm").onsubmit=saveMonth;
 $("saveBal").onclick=()=>saveAssets("bal"); $("saveStash").onclick=()=>saveAssets("stash");
